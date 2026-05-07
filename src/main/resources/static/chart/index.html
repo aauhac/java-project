@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TradeAgent Chart</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        :root {
+            color-scheme: light dark;
+            font-family: Arial, sans-serif;
+        }
+
+        body {
+            margin: 0;
+            padding: 24px;
+            background: #111827;
+            color: #f9fafb;
+        }
+
+        main {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            margin-top: 0;
+        }
+
+        form {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            align-items: end;
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            font-size: 14px;
+        }
+
+        input, button {
+            border-radius: 8px;
+            border: 1px solid #374151;
+            padding: 10px 12px;
+            font: inherit;
+        }
+
+        input {
+            background: #1f2937;
+            color: #f9fafb;
+        }
+
+        button {
+            background: #2563eb;
+            color: white;
+            cursor: pointer;
+        }
+
+        .panel {
+            background: #1f2937;
+            border: 1px solid #374151;
+            border-radius: 16px;
+            padding: 16px;
+        }
+
+        .chart-shell {
+            position: relative;
+            min-height: 480px;
+        }
+
+        #status {
+            margin-bottom: 12px;
+            min-height: 24px;
+            color: #cbd5e1;
+        }
+
+        #candles {
+            width: 100%;
+            height: 480px;
+        }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Alpaca Stock Chart</h1>
+    <p>ALPACA_API_KEY / ALPACA_API_SECRET 환경 변수를 설정한 뒤 종목의 캔들 차트를 확인하세요.</p>
+
+    <form id="chart-form">
+        <label>
+            Symbol
+            <input id="symbol" name="symbol" value="AAPL" required>
+        </label>
+        <label>
+            Timeframe
+            <input id="timeframe" name="timeframe" value="1Day" required>
+        </label>
+        <label>
+            Start
+            <input id="start" name="start" type="date" required>
+        </label>
+        <label>
+            End
+            <input id="end" name="end" type="date" required>
+        </label>
+        <button type="submit">Load Chart</button>
+    </form>
+
+    <section class="panel">
+        <div id="status"></div>
+        <div class="chart-shell">
+            <div id="candles"></div>
+        </div>
+    </section>
+</main>
+
+<script>
+    const form = document.getElementById('chart-form');
+    const status = document.getElementById('status');
+    const startInput = document.getElementById('start');
+    const endInput = document.getElementById('end');
+    const chartHost = document.getElementById('candles');
+
+    const today = new Date();
+    const prior = new Date();
+    prior.setDate(today.getDate() - 60);
+
+    startInput.value = prior.toISOString().slice(0, 10);
+    endInput.value = today.toISOString().slice(0, 10);
+
+    const chart = LightweightCharts.createChart(chartHost, {
+        layout: {
+            background: {color: '#1f2937'},
+            textColor: '#e5e7eb'
+        },
+        grid: {
+            vertLines: {color: 'rgba(203, 213, 225, 0.08)'},
+            horzLines: {color: 'rgba(203, 213, 225, 0.08)'}
+        },
+        rightPriceScale: {
+            borderColor: 'rgba(203, 213, 225, 0.2)'
+        },
+        timeScale: {
+            borderColor: 'rgba(203, 213, 225, 0.2)',
+            timeVisible: true
+        },
+        crosshair: {
+            mode: LightweightCharts.CrosshairMode.Normal
+        },
+        width: chartHost.clientWidth,
+        height: 480
+    });
+
+    const candleSeries = chart.addCandlestickSeries({
+        upColor: '#22c55e',
+        downColor: '#ef4444',
+        borderVisible: false,
+        wickUpColor: '#22c55e',
+        wickDownColor: '#ef4444'
+    });
+
+    const volumeSeries = chart.addHistogramSeries({
+        priceFormat: {
+            type: 'volume'
+        },
+        priceScaleId: 'volume',
+        color: 'rgba(148, 163, 184, 0.35)'
+    });
+
+    chart.priceScale('volume').applyOptions({
+        scaleMargins: {
+            top: 0.75,
+            bottom: 0
+        }
+    });
+
+    chart.priceScale('right').applyOptions({
+        scaleMargins: {
+            top: 0.1,
+            bottom: 0.3
+        }
+    });
+
+    window.addEventListener('resize', () => {
+        chart.applyOptions({width: chartHost.clientWidth});
+    });
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        status.textContent = 'Loading Alpaca bars...';
+        try {
+            const params = new URLSearchParams(new FormData(form));
+            const response = await fetch(`/chart/api/bars?${params.toString()}`);
+            const payload = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                const message = payload.detail || 'Failed to load chart data.';
+                status.textContent = message;
+                return;
+            }
+
+            if (!Array.isArray(payload.bars) || payload.bars.length === 0) {
+                status.textContent = 'No bar data returned for the selected range.';
+                candleSeries.setData([]);
+                volumeSeries.setData([]);
+                return;
+            }
+
+            const candles = payload.bars.map((bar) => {
+                const time = String(bar.time).slice(0, 10);
+                return {
+                    time,
+                    open: bar.open,
+                    high: bar.high,
+                    low: bar.low,
+                    close: bar.close
+                };
+            });
+
+            const volumes = payload.bars.map((bar) => {
+                const time = String(bar.time).slice(0, 10);
+                const rising = bar.close >= bar.open;
+                return {
+                    time,
+                    value: bar.volume,
+                    color: rising ? 'rgba(34, 197, 94, 0.45)' : 'rgba(239, 68, 68, 0.45)'
+                };
+            });
+
+            candleSeries.setData(candles);
+            volumeSeries.setData(volumes);
+            chart.timeScale().fitContent();
+
+            status.textContent = `${payload.symbol} ${payload.start} ~ ${payload.end} (${payload.bars.length} bars)`;
+        } catch (error) {
+            status.textContent = error instanceof Error ? error.message : 'Unexpected chart rendering error.';
+        }
+    });
+
+    form.requestSubmit();
+</script>
+</body>
+</html>
