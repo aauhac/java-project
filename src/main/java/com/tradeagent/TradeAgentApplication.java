@@ -1,12 +1,20 @@
 package com.tradeagent;
 
 import com.tradeagent.chart.ChartProperties;
+import com.tradeagent.config.AlpacaProperties;
+import com.tradeagent.config.GdeltProperties;
+import com.tradeagent.config.VllmProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
 @SpringBootApplication
-@EnableConfigurationProperties(ChartProperties.class)
+@EnableConfigurationProperties({
+        ChartProperties.class,
+        AlpacaProperties.class,
+        GdeltProperties.class,
+        VllmProperties.class
+})
 public class TradeAgentApplication {
 
     public static void main(String[] args) {
