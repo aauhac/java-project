@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TradeAgent API Test</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="/js/layout.js" defer></script>
+</head>
+<body>
+<div id="app-nav"></div>
+
+<main class="page-shell">
+    <section class="page-hero">
+        <h1 class="page-title">API 테스트</h1>
+        <p class="page-description">핵심 백엔드 API를 브라우저에서 직접 호출하고 `ApiResponse` JSON을 카드 단위로 확인합니다.</p>
+    </section>
+
+    <div class="toolbar">
+        <button id="run-all" class="button">Run All</button>
+        <button id="clear-all" class="button secondary" type="button">Clear</button>
+    </div>
+
+    <div id="summary" class="alert alert-info">Ready.</div>
+    <section id="results" class="grid cols-2"></section>
+</main>
+
+<script>
+    window.addEventListener('DOMContentLoaded', () => {
+        Layout.mountNavigation('api-test');
+    });
+
+    const endpoints = [
+        {id: 'portfolio-summary', title: 'Portfolio Summary', method: 'GET', url: '/api/portfolio/1/summary'},
+        {id: 'portfolio-positions', title: 'Portfolio Positions', method: 'GET', url: '/api/portfolio/1/positions'},
+        {id: 'evaluation-summary', title: 'Evaluation Summary', method: 'GET', url: '/api/evaluations/user/1/summary'},
+        {id: 'opportunity-summary', title: 'Opportunity Summary', method: 'GET', url: '/api/opportunities/1/summary'},
+        {id: 'sector-scores', title: 'Sector Scores', method: 'GET', url: '/api/sectors/scores'},
+        {id: 'sector-diagnostic', title: 'Sector Diagnostic', method: 'GET', url: '/api/sectors/user/1/diagnostic'},
+        {id: 'feedback-overall', title: 'Overall Feedback', method: 'GET', url: '/api/feedback/1/overall'}
+    ];
+
+    const resultsHost = document.getElementById('results');
+    const summary = document.getElementById('summary');
+    const runAllButton = document.getElementById('run-all');
+    const clearButton = document.getElementById('clear-all');
+
+    const cards = new Map();
+
+    function createCard(endpoint) {
+        const article = document.createElement('article');
+        article.className = 'card';
+
+        const header = document.createElement('div');
+        header.className = 'card-header';
+
+        const info = document.createElement('div');
+        info.innerHTML = `
+            <div class="title">${endpoint.title}</div>
+            <div class="endpoint">${endpoint.method} ${endpoint.url}</div>
+        `;
+
+        const actionWrap = document.createElement('div');
+        actionWrap.style.display = 'flex';
+        actionWrap.style.alignItems = 'center';
+        actionWrap.style.gap = '10px';
+
+        const status = document.createElement('span');
+        status.className = 'status idle';
+        status.textContent = 'IDLE';
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = 'Run';
+        button.addEventListener('click', () => runEndpoint(endpoint));
+
+        actionWrap.append(status, button);
+        header.append(info, actionWrap);
+
+        const body = document.createElement('div');
+        body.className = 'card-body';
+
+        const pre = document.createElement('pre');
+        pre.className = 'code-block';
+        pre.textContent = 'No response yet.';
+
+        body.append(pre);
+        article.append(header, body);
+        resultsHost.append(article);
+
+        cards.set(endpoint.id, {status, button, pre});
+    }
+
+    function setStatus(card, type, text) {
+        card.status.className = `status ${type}`;
+        card.status.textContent = text;
+    }
+
+    async function runEndpoint(endpoint) {
+        const card = cards.get(endpoint.id);
+        setStatus(card, 'loading', 'LOADING');
+        card.button.disabled = true;
+        card.pre.textContent = 'Fetching...';
+
+        try {
+            const response = await fetch(endpoint.url, {
+                method: endpoint.method,
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
+
+            const payload = await response.json().catch(() => null);
+            const output = payload ?? {
+                success: false,
+                error: {
+                    message: 'Response body is not valid JSON.'
+                }
+            };
+
+            card.pre.textContent = JSON.stringify(output, null, 2);
+            setStatus(card, response.ok ? 'success' : 'error', `${response.status} ${response.ok ? 'OK' : 'ERROR'}`);
+            return response.ok;
+        } catch (error) {
+            card.pre.textContent = JSON.stringify({
+                success: false,
+                error: {
+                    message: error instanceof Error ? error.message : 'Unexpected request error.'
+                }
+            }, null, 2);
+            setStatus(card, 'error', 'FETCH ERROR');
+            return false;
+        } finally {
+            card.button.disabled = false;
+        }
+    }
+
+    async function runAll() {
+        runAllButton.disabled = true;
+        summary.className = 'alert alert-info';
+        summary.textContent = 'Running all API checks...';
+
+        let successCount = 0;
+        for (const endpoint of endpoints) {
+            const ok = await runEndpoint(endpoint);
+            if (ok) {
+                successCount += 1;
+            }
+        }
+
+        summary.className = endpoints.length === successCount ? 'alert alert-success' : 'alert alert-warning';
+        summary.textContent = `Completed ${endpoints.length} checks. Success: ${successCount}, Failed: ${endpoints.length - successCount}.`;
+        runAllButton.disabled = false;
+    }
+
+    function clearAll() {
+        summary.className = 'alert alert-info';
+        summary.textContent = 'Ready.';
+        for (const endpoint of endpoints) {
+            const card = cards.get(endpoint.id);
+            setStatus(card, 'idle', 'IDLE');
+            card.pre.textContent = 'No response yet.';
+            card.button.disabled = false;
+        }
+    }
+
+    endpoints.forEach(createCard);
+    runAllButton.addEventListener('click', runAll);
+    clearButton.addEventListener('click', clearAll);
+</script>
+</body>
+</html>

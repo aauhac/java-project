@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TradeAgent Dashboard</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="/js/layout.js" defer></script>
+    <script src="/js/api.js" defer></script>
+    <script src="/js/format.js" defer></script>
+</head>
+<body>
+<div id="app-nav"></div>
+
+<main class="page-shell">
+    <section class="page-hero">
+        <h1 class="page-title">포트폴리오 대시보드</h1>
+        <p class="page-description">현재 포트폴리오 요약, 보유 종목, 섹터 비중을 발표용 화면으로 정리합니다.</p>
+    </section>
+
+    <div id="page-status"></div>
+
+    <section class="section">
+        <div id="summary-cards" class="grid cols-4"></div>
+    </section>
+
+    <section class="section">
+        <div class="section-header">
+            <div>
+                <h2 class="section-title">보유 종목</h2>
+                <p class="section-subtitle">차트 보기 버튼으로 종목별 차트 페이지로 이동합니다.</p>
+            </div>
+        </div>
+        <div class="card">
+            <div id="positions-table"></div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="section-header">
+            <div>
+                <h2 class="section-title">섹터 비중</h2>
+                <p class="section-subtitle">현재 포트폴리오의 자금 분포를 섹터별로 표현합니다.</p>
+            </div>
+        </div>
+        <div class="card">
+            <div id="sector-allocation"></div>
+        </div>
+    </section>
+</main>
+
+<script>
+    window.addEventListener('DOMContentLoaded', async () => {
+        Layout.mountNavigation('dashboard');
+        const statusHost = document.getElementById('page-status');
+        statusHost.innerHTML = Layout.alert('대시보드 데이터를 불러오는 중입니다.', 'info');
+
+        try {
+            const [summaryResponse, positionsResponse, sectorsResponse] = await Promise.all([
+                API.getPortfolioSummary(1),
+                API.getPortfolioPositions(1),
+                API.getSectorAllocation(1)
+            ]);
+
+            renderSummary(summaryResponse.data);
+            renderPositions(positionsResponse.data || []);
+            renderSectorAllocation(sectorsResponse.data || []);
+            statusHost.innerHTML = Layout.alert('포트폴리오 데이터 로딩이 완료되었습니다.', 'success');
+        } catch (error) {
+            statusHost.innerHTML = Layout.alert(error.message || '대시보드 데이터를 불러오지 못했습니다.', 'error');
+        }
+    });
+
+    function renderSummary(summary) {
+        const cards = [
+            ['총 매수금액', Format.currency(summary.totalBuyAmount), '누적 매수 원가 기준입니다.'],
+            ['총 평가금액', Format.currency(summary.totalMarketValue), '현재가 기준 평가 금액입니다.'],
+            ['총 손익', `<span class="${Format.percentClass(summary.totalProfitLoss)}">${Format.currency(summary.totalProfitLoss)}</span>`, '평가금액 - 매수금액'],
+            ['총 수익률', `<span class="${Format.percentClass(summary.totalReturnRate)}">${Format.percent(summary.totalReturnRate)}</span>`, '포트폴리오 전체 수익률'],
+            ['보유 종목 수', Format.integer(summary.positionCount), '현재 포지션 개수']
+        ];
+
+        document.getElementById('summary-cards').innerHTML = cards.map(([label, value, hint]) => `
+            <article class="card stat-card">
+                <div class="stat-card__label">${label}</div>
+                <div class="stat-card__value">${value}</div>
+                <div class="stat-card__hint">${hint}</div>
+            </article>
+        `).join('');
+    }
+
+    function renderPositions(positions) {
+        const host = document.getElementById('positions-table');
+        if (!positions.length) {
+            host.innerHTML = Layout.empty('보유 종목이 없습니다.');
+            return;
+        }
+
+        host.innerHTML = `
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                    <tr>
+                        <th>심볼</th>
+                        <th>섹터</th>
+                        <th>평균 매수가</th>
+                        <th>현재가</th>
+                        <th>수량</th>
+                        <th>평가금액</th>
+                        <th>손익</th>
+                        <th>수익률</th>
+                        <th>이동</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    ${positions.map(position => `
+                        <tr>
+                            <td><strong>${Layout.escapeHtml(position.symbol)}</strong></td>
+                            <td>${Layout.escapeHtml(position.sectorCode)}</td>
+                            <td>${Format.currency(position.avgBuyPrice)}</td>
+                            <td>${Format.currency(position.currentPrice)}</td>
+                            <td>${Format.integer(position.quantity)}</td>
+                            <td>${Format.currency(position.marketValue)}</td>
+                            <td class="${Format.percentClass(position.profitLoss)}">${Format.currency(position.profitLoss)}</td>
+                            <td class="${Format.percentClass(position.returnRate)}">${Format.percent(position.returnRate)}</td>
+                            <td><a class="button-link" href="/chart/index.html?symbol=${encodeURIComponent(position.symbol)}">차트 보기</a></td>
+                        </tr>
+                    `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    function renderSectorAllocation(items) {
+        const host = document.getElementById('sector-allocation');
+        if (!items.length) {
+            host.innerHTML = Layout.empty('섹터 비중 데이터가 없습니다.');
+            return;
+        }
+
+        host.innerHTML = `
+            <div class="bar-list">
+                ${items.map(item => `
+                    <div class="bar-row">
+                        <div class="bar-row__meta">
+                            <span><strong>${Layout.escapeHtml(item.sectorName)}</strong> (${Layout.escapeHtml(item.sectorCode)})</span>
+                            <span>${Format.percent(item.allocationRate)} / ${Format.currency(item.marketValue)}</span>
+                        </div>
+                        <div class="bar-track">
+                            <div class="bar-fill" style="width: ${Math.min(Number(item.allocationRate) || 0, 100)}%"></div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TradeAgent Sector</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="/js/layout.js" defer></script>
+    <script src="/js/api.js" defer></script>
+    <script src="/js/format.js" defer></script>
+</head>
+<body>
+<div id="app-nav"></div>
+
+<main class="page-shell">
+    <section class="page-hero">
+        <h1 class="page-title">섹터 진단</h1>
+        <p class="page-description">섹터 점수 보드와 현재 포트폴리오의 강한/약한 섹터 노출을 함께 보여줍니다.</p>
+    </section>
+
+    <div id="page-status"></div>
+
+    <section class="section">
+        <div class="grid cols-4" id="sector-scoreboard"></div>
+    </section>
+
+    <section class="section">
+        <div class="grid cols-2" id="diagnostic-cards"></div>
+    </section>
+
+    <section class="section">
+        <div class="section-header">
+            <div>
+                <h2 class="section-title">포트폴리오 섹터 노출</h2>
+                <p class="section-subtitle">보유 비중, 섹터 점수, 상태를 한 번에 확인합니다.</p>
+            </div>
+        </div>
+        <div class="card" id="exposure-table"></div>
+    </section>
+
+    <section class="section">
+        <div class="section-header">
+            <div>
+                <h2 class="section-title">피드백</h2>
+                <p class="section-subtitle">섹터 진단과 별도로 생성된 사용자 친화적 문장입니다.</p>
+            </div>
+        </div>
+        <div class="card feedback-box" id="feedback-box"></div>
+    </section>
+</main>
+
+<script>
+    window.addEventListener('DOMContentLoaded', async () => {
+        Layout.mountNavigation('sector');
+        const statusHost = document.getElementById('page-status');
+        statusHost.innerHTML = Layout.alert('섹터 데이터를 불러오는 중입니다.', 'info');
+
+        try {
+            const [scoresResponse, diagnosticResponse, feedbackResponse] = await Promise.all([
+                API.getSectorScores(),
+                API.getSectorDiagnostic(1),
+                API.getSectorFeedback(1)
+            ]);
+
+            renderScores(scoresResponse.data || []);
+            renderDiagnostic(diagnosticResponse.data);
+            renderExposure(diagnosticResponse.data?.exposures || []);
+            renderFeedback(feedbackResponse.data);
+            statusHost.innerHTML = Layout.alert('섹터 데이터 로딩이 완료되었습니다.', 'success');
+        } catch (error) {
+            statusHost.innerHTML = Layout.alert(error.message || '섹터 데이터를 불러오지 못했습니다.', 'error');
+        }
+    });
+
+    function renderScores(scores) {
+        const host = document.getElementById('sector-scoreboard');
+        if (!scores.length) {
+            host.innerHTML = Layout.empty('섹터 점수 데이터가 없습니다.');
+            return;
+        }
+
+        host.innerHTML = scores.map(score => `
+            <article class="card stat-card">
+                <div class="stat-card__label">${Layout.escapeHtml(score.sectorCode)}</div>
+                <div class="stat-card__value">${Format.score(score.totalSectorScore)}</div>
+                <div>${Layout.statusPill(score.status)}</div>
+                <div class="stat-card__hint">${Layout.escapeHtml(score.sectorName)} / ${Format.date(score.scoreDate)}</div>
+                <div class="bar-track"><div class="bar-fill ${score.status === 'STRONG' ? 'success' : score.status === 'WEAK' ? 'danger' : ''}" style="width: ${Math.min(Number(score.totalSectorScore) || 0, 100)}%"></div></div>
+            </article>
+        `).join('');
+    }
+
+    function renderDiagnostic(diagnostic) {
+        document.getElementById('diagnostic-cards').innerHTML = `
+            <article class="card stat-card">
+                <div class="stat-card__label">강한 섹터 노출</div>
+                <div class="stat-card__value positive">${Format.percent(diagnostic.strongExposure)}</div>
+                <div class="stat-card__hint">70점 이상 섹터의 포트폴리오 노출 비율</div>
+            </article>
+            <article class="card stat-card">
+                <div class="stat-card__label">약한 섹터 노출</div>
+                <div class="stat-card__value negative">${Format.percent(diagnostic.weakExposure)}</div>
+                <div class="stat-card__hint">${Layout.escapeHtml(diagnostic.message || '진단 문장이 없습니다.')}</div>
+            </article>
+        `;
+    }
+
+    function renderExposure(items) {
+        const host = document.getElementById('exposure-table');
+        if (!items.length) {
+            host.innerHTML = Layout.empty('포트폴리오 섹터 노출 데이터가 없습니다.');
+            return;
+        }
+
+        host.innerHTML = `
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                    <tr>
+                        <th>섹터</th>
+                        <th>보유 비중</th>
+                        <th>섹터 점수</th>
+                        <th>상태</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    ${items.map(item => `
+                        <tr>
+                            <td><strong>${Layout.escapeHtml(item.sectorName)}</strong> (${Layout.escapeHtml(item.sectorCode)})</td>
+                            <td>${Format.percent(item.portfolioRate)}</td>
+                            <td>${Format.score(item.sectorScore)}</td>
+                            <td>${Layout.statusPill(item.status)}</td>
+                        </tr>
+                    `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    function renderFeedback(feedback) {
+        document.getElementById('feedback-box').innerHTML = `
+            <div>${Layout.escapeHtml(feedback.message || '피드백이 없습니다.')}</div>
+            <div class="muted" style="margin-top:10px;">Provider: ${Layout.escapeHtml(feedback.providerType || '-')} / ${Format.dateTime(feedback.createdAt)}</div>
+        `;
+    }
+</script>
+</body>
+</html>

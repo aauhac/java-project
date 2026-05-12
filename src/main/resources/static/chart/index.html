@@ -5,69 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TradeAgent Chart</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="/js/layout.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
     <style>
-        :root {
-            color-scheme: light dark;
-            font-family: Arial, sans-serif;
-        }
-
-        body {
-            margin: 0;
-            padding: 24px;
-            background: #111827;
-            color: #f9fafb;
-        }
-
-        main {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
-        h1 {
-            margin-top: 0;
-        }
-
-        form {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 12px;
-            align-items: end;
-            margin-bottom: 20px;
-        }
-
-        label {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            font-size: 14px;
-        }
-
-        input, button {
-            border-radius: 8px;
-            border: 1px solid #374151;
-            padding: 10px 12px;
-            font: inherit;
-        }
-
-        input {
-            background: #1f2937;
-            color: #f9fafb;
-        }
-
-        button {
-            background: #2563eb;
-            color: white;
-            cursor: pointer;
-        }
-
-        .panel {
-            background: #1f2937;
-            border: 1px solid #374151;
-            border-radius: 16px;
-            padding: 16px;
-        }
-
         .chart-shell {
             position: relative;
             min-height: 480px;
@@ -75,8 +16,6 @@
 
         #status {
             margin-bottom: 12px;
-            min-height: 24px;
-            color: #cbd5e1;
         }
 
         #candles {
@@ -86,51 +25,70 @@
     </style>
 </head>
 <body>
-<main>
-    <h1>Alpaca Stock Chart</h1>
-    <p>ALPACA_API_KEY / ALPACA_API_SECRET 환경 변수를 설정한 뒤 종목의 캔들 차트를 확인하세요.</p>
+<div id="app-nav"></div>
 
-    <form id="chart-form">
-        <label>
-            Symbol
-            <input id="symbol" name="symbol" value="AAPL" required>
-        </label>
-        <label>
-            Timeframe
-            <input id="timeframe" name="timeframe" value="1Day" required>
-        </label>
-        <label>
-            Start
-            <input id="start" name="start" type="date" required>
-        </label>
-        <label>
-            End
-            <input id="end" name="end" type="date" required>
-        </label>
-        <button type="submit">Load Chart</button>
-    </form>
+<main class="page-shell">
+    <section class="page-hero">
+        <h1 class="page-title">차트 분석</h1>
+        <p class="page-description">캔들차트와 거래량을 조회합니다. 대시보드의 차트 보기 버튼이 이 페이지로 심볼을 넘깁니다.</p>
+    </section>
 
-    <section class="panel">
-        <div id="status"></div>
-        <div class="chart-shell">
-            <div id="candles"></div>
+    <section class="section">
+        <div class="card">
+            <form id="chart-form" class="form-grid">
+                <label class="form-label">
+                    Symbol
+                    <input class="input" id="symbol" name="symbol" value="AAPL" required>
+                </label>
+                <label class="form-label">
+                    Timeframe
+                    <input class="input" id="timeframe" name="timeframe" value="1Day" required>
+                </label>
+                <label class="form-label">
+                    Start
+                    <input class="input" id="start" name="start" type="date" required>
+                </label>
+                <label class="form-label">
+                    End
+                    <input class="input" id="end" name="end" type="date" required>
+                </label>
+                <button class="button" type="submit">Load Chart</button>
+            </form>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="card">
+            <div id="status" class="alert alert-info">차트 데이터를 불러올 준비가 되었습니다.</div>
+            <div class="chart-shell">
+                <div id="candles"></div>
+            </div>
         </div>
     </section>
 </main>
 
 <script>
+    window.addEventListener('DOMContentLoaded', () => {
+        Layout.mountNavigation('chart');
+    });
+
     const form = document.getElementById('chart-form');
     const status = document.getElementById('status');
     const startInput = document.getElementById('start');
     const endInput = document.getElementById('end');
     const chartHost = document.getElementById('candles');
+    const symbolInput = document.getElementById('symbol');
+    const timeframeInput = document.getElementById('timeframe');
 
     const today = new Date();
     const prior = new Date();
     prior.setDate(today.getDate() - 60);
 
-    startInput.value = prior.toISOString().slice(0, 10);
-    endInput.value = today.toISOString().slice(0, 10);
+    const query = new URLSearchParams(window.location.search);
+    symbolInput.value = query.get('symbol') || 'AAPL';
+    timeframeInput.value = query.get('timeframe') || '1Day';
+    startInput.value = query.get('start') || prior.toISOString().slice(0, 10);
+    endInput.value = query.get('end') || today.toISOString().slice(0, 10);
 
     const chart = LightweightCharts.createChart(chartHost, {
         layout: {
@@ -191,19 +149,23 @@
 
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
-        status.textContent = 'Loading Alpaca bars...';
+        status.className = 'alert alert-info';
+        status.textContent = 'Loading chart bars...';
         try {
             const params = new URLSearchParams(new FormData(form));
+            history.replaceState(null, '', `/chart/index.html?${params.toString()}`);
             const response = await fetch(`/chart/api/bars?${params.toString()}`);
             const payload = await response.json().catch(() => ({}));
 
             if (!response.ok) {
                 const message = payload.detail || 'Failed to load chart data.';
+                status.className = 'alert alert-error';
                 status.textContent = message;
                 return;
             }
 
             if (!Array.isArray(payload.bars) || payload.bars.length === 0) {
+                status.className = 'alert alert-warning';
                 status.textContent = 'No bar data returned for the selected range.';
                 candleSeries.setData([]);
                 volumeSeries.setData([]);
@@ -235,8 +197,10 @@
             volumeSeries.setData(volumes);
             chart.timeScale().fitContent();
 
+            status.className = 'alert alert-success';
             status.textContent = `${payload.symbol} ${payload.start} ~ ${payload.end} (${payload.bars.length} bars)`;
         } catch (error) {
+            status.className = 'alert alert-error';
             status.textContent = error instanceof Error ? error.message : 'Unexpected chart rendering error.';
         }
     });
