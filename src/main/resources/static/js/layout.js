@@ -2,10 +2,7 @@
     const navItems = [
         {key: 'home', label: '메인', href: '/'},
         {key: 'dashboard', label: '대시보드', href: '/dashboard/index.html'},
-        {key: 'chart', label: '차트', href: '/chart/index.html'},
-        {key: 'evaluation', label: '평가', href: '/evaluation/index.html'},
-        {key: 'opportunity', label: '기회/위험', href: '/opportunity/index.html'},
-        {key: 'sector', label: '섹터', href: '/sector/index.html'},
+        {key: 'analysis', label: '투자 판단 품질 평가', href: '/analysis/index.html'},
         {key: 'api-test', label: 'API 테스트', href: '/api-test.html'}
     ];
 
@@ -15,7 +12,7 @@
             .replaceAll('<', '&lt;')
             .replaceAll('>', '&gt;')
             .replaceAll('"', '&quot;')
-            .replaceAll("'", '&#39;');
+            .replaceAll("'", '&#039;');
     }
 
     function mountNavigation(activeKey) {
