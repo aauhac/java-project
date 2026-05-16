@@ -11,6 +11,7 @@ import com.tradeagent.portfolio.PortfolioPosition;
 import com.tradeagent.portfolio.PortfolioRepository;
 import com.tradeagent.portfolio.TradeHistory;
 import com.tradeagent.portfolio.TradeHistoryRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,10 +21,15 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.function.Function;
 
 @Service
 @Transactional(readOnly = true)
 public class TradeEvaluationService {
+
+    private static final int ENTRY_LOOKAHEAD_DAYS = 10;
+    private static final int ENTRY_BAR_LIMIT = 5;
+    private static final int EXIT_WINDOW_DAYS = 5;
 
     private final TradeHistoryRepository tradeHistoryRepository;
     private final PortfolioRepository portfolioRepository;
@@ -95,12 +101,16 @@ public class TradeEvaluationService {
             );
         }
 
-        BigDecimal averageEntry = average(evaluations.stream().map(TradeEvaluationDto::entryScore).toList());
-        BigDecimal averageExit = average(evaluations.stream().map(TradeEvaluationDto::exitScore).toList());
-        BigDecimal averageRisk = average(evaluations.stream().map(TradeEvaluationDto::riskScore).toList());
-        BigDecimal averageDiversification = average(evaluations.stream().map(TradeEvaluationDto::diversificationScore).toList());
-        BigDecimal averageSectorFit = average(evaluations.stream().map(TradeEvaluationDto::sectorFitScore).toList());
-        BigDecimal averageTotal = average(evaluations.stream().map(TradeEvaluationDto::totalScore).toList());
+        return buildSummary(evaluations);
+    }
+
+    private DecisionSummaryDto buildSummary(List<TradeEvaluationDto> evaluations) {
+        BigDecimal averageEntry = averageOf(evaluations, TradeEvaluationDto::entryScore);
+        BigDecimal averageExit = averageOf(evaluations, TradeEvaluationDto::exitScore);
+        BigDecimal averageRisk = averageOf(evaluations, TradeEvaluationDto::riskScore);
+        BigDecimal averageDiversification = averageOf(evaluations, TradeEvaluationDto::diversificationScore);
+        BigDecimal averageSectorFit = averageOf(evaluations, TradeEvaluationDto::sectorFitScore);
+        BigDecimal averageTotal = averageOf(evaluations, TradeEvaluationDto::totalScore);
 
         return new DecisionSummaryDto(
                 averageEntry,
@@ -119,7 +129,20 @@ public class TradeEvaluationService {
         );
     }
 
+    private BigDecimal averageOf(
+            List<TradeEvaluationDto> evaluations,
+            Function<TradeEvaluationDto, BigDecimal> extractor
+    ) {
+        return average(evaluations.stream().map(extractor).toList());
+    }
+
     private TradeEvaluationDto evaluateTradeInternal(TradeHistory tradeHistory) {
+        EvaluationScores scores = calculateScores(tradeHistory);
+        TradeEvaluation persisted = upsertEvaluation(tradeHistory, scores);
+        return toDto(persisted);
+    }
+
+    private EvaluationScores calculateScores(TradeHistory tradeHistory) {
         TradePairContext tradePairContext = resolveTradePair(tradeHistory);
         List<PortfolioPosition> positions = portfolioRepository.findByUserId(tradeHistory.getUserId());
 
@@ -154,30 +177,48 @@ public class TradeEvaluationService {
                 sectorFitScore
         );
 
-        TradeEvaluation persisted = tradeEvaluationRepository.findByTradeHistoryId(tradeHistory.getId())
-                .map(existing -> {
-                    existing.updateScores(
-                            entryScore,
-                            exitScore,
-                            riskScore,
-                            diversificationScore,
-                            sectorFitScore,
-                            totalScore,
-                            DateTimeUtil.nowUtc()
-                    );
-                    return tradeEvaluationRepository.save(existing);
-                })
-                .orElseGet(() -> tradeEvaluationRepository.save(new TradeEvaluation(
-                        tradeHistory.getId(),
-                        entryScore,
-                        exitScore,
-                        riskScore,
-                        diversificationScore,
-                        sectorFitScore,
-                        totalScore,
-                        DateTimeUtil.nowUtc()
-                )));
+        return new EvaluationScores(entryScore, exitScore, riskScore, diversificationScore, sectorFitScore, totalScore);
+    }
 
+    private TradeEvaluation upsertEvaluation(TradeHistory tradeHistory, EvaluationScores scores) {
+        return tradeEvaluationRepository.findByTradeHistoryId(tradeHistory.getId())
+                .map(existing -> updateAndSave(existing, scores))
+                .orElseGet(() -> createOrRecover(tradeHistory, scores));
+    }
+
+    private TradeEvaluation createOrRecover(TradeHistory tradeHistory, EvaluationScores scores) {
+        try {
+            return tradeEvaluationRepository.save(new TradeEvaluation(
+                    tradeHistory.getId(),
+                    scores.entry(),
+                    scores.exit(),
+                    scores.risk(),
+                    scores.diversification(),
+                    scores.sectorFit(),
+                    scores.total(),
+                    DateTimeUtil.nowUtc()
+            ));
+        } catch (DataIntegrityViolationException e) {
+            TradeEvaluation existing = tradeEvaluationRepository.findByTradeHistoryId(tradeHistory.getId())
+                    .orElseThrow(() -> e);
+            return updateAndSave(existing, scores);
+        }
+    }
+
+    private TradeEvaluation updateAndSave(TradeEvaluation evaluation, EvaluationScores scores) {
+        evaluation.updateScores(
+                scores.entry(),
+                scores.exit(),
+                scores.risk(),
+                scores.diversification(),
+                scores.sectorFit(),
+                scores.total(),
+                DateTimeUtil.nowUtc()
+        );
+        return tradeEvaluationRepository.save(evaluation);
+    }
+
+    private TradeEvaluationDto toDto(TradeEvaluation persisted) {
         String feedback = decisionFeedbackBuilder.buildFeedback(
                 persisted.getEntryScore(),
                 persisted.getExitScore(),
@@ -207,33 +248,6 @@ public class TradeEvaluationService {
         );
     }
 
-    private TradePairContext resolveTradePair(TradeHistory anchorTrade) {
-        List<TradeHistory> trades = tradeHistoryRepository.findByUserIdAndSymbol(anchorTrade.getUserId(), anchorTrade.getSymbol()).stream()
-                .sorted(Comparator.comparing(TradeHistory::getTradedAt))
-                .toList();
-
-        TradeHistory buyTrade = null;
-        TradeHistory sellTrade = null;
-
-        if (anchorTrade.getTradeType() == TradeType.BUY) {
-            buyTrade = anchorTrade;
-            sellTrade = trades.stream()
-                    .filter(trade -> trade.getTradeType() == TradeType.SELL)
-                    .filter(trade -> !trade.getTradedAt().isBefore(anchorTrade.getTradedAt()))
-                    .findFirst()
-                    .orElse(null);
-        } else if (anchorTrade.getTradeType() == TradeType.SELL) {
-            sellTrade = anchorTrade;
-            buyTrade = trades.stream()
-                    .filter(trade -> trade.getTradeType() == TradeType.BUY)
-                    .filter(trade -> !trade.getTradedAt().isAfter(anchorTrade.getTradedAt()))
-                    .reduce((first, second) -> second)
-                    .orElse(null);
-        }
-
-        return new TradePairContext(buyTrade, sellTrade);
-    }
-
     private List<PriceBar> loadBarsAfterEntry(TradeHistory buyTrade) {
         if (buyTrade == null) {
             return List.of();
@@ -243,10 +257,10 @@ public class TradeEvaluationService {
         return priceBarRepository.findBySymbolAndBarTimeBetween(
                         buyTrade.getSymbol(),
                         tradeDate.atStartOfDay(),
-                        tradeDate.plusDays(10).atTime(LocalTime.MAX))
+                        tradeDate.plusDays(ENTRY_LOOKAHEAD_DAYS).atTime(LocalTime.MAX))
                 .stream()
                 .sorted(Comparator.comparing(PriceBar::getBarTime))
-                .limit(5)
+                .limit(ENTRY_BAR_LIMIT)
                 .toList();
     }
 
@@ -258,8 +272,8 @@ public class TradeEvaluationService {
         LocalDate tradeDate = sellTrade.getTradedAt().toLocalDate();
         return priceBarRepository.findBySymbolAndBarTimeBetween(
                         sellTrade.getSymbol(),
-                        tradeDate.minusDays(5).atStartOfDay(),
-                        tradeDate.plusDays(5).atTime(LocalTime.MAX))
+                        tradeDate.minusDays(EXIT_WINDOW_DAYS).atStartOfDay(),
+                        tradeDate.plusDays(EXIT_WINDOW_DAYS).atTime(LocalTime.MAX))
                 .stream()
                 .sorted(Comparator.comparing(PriceBar::getBarTime))
                 .toList();
@@ -286,6 +300,33 @@ public class TradeEvaluationService {
                 .stream()
                 .sorted(Comparator.comparing(PriceBar::getBarTime))
                 .toList();
+    }
+
+    private TradePairContext resolveTradePair(TradeHistory anchorTrade) {
+        List<TradeHistory> trades = tradeHistoryRepository.findByUserIdAndSymbol(anchorTrade.getUserId(), anchorTrade.getSymbol()).stream()
+                .sorted(Comparator.comparing(TradeHistory::getTradedAt))
+                .toList();
+
+        TradeHistory buyTrade = null;
+        TradeHistory sellTrade = null;
+
+        if (anchorTrade.getTradeType() == TradeType.BUY) {
+            buyTrade = anchorTrade;
+            sellTrade = trades.stream()
+                    .filter(trade -> trade.getTradeType() == TradeType.SELL)
+                    .filter(trade -> !trade.getTradedAt().isBefore(anchorTrade.getTradedAt()))
+                    .findFirst()
+                    .orElse(null);
+        } else if (anchorTrade.getTradeType() == TradeType.SELL) {
+            sellTrade = anchorTrade;
+            buyTrade = trades.stream()
+                    .filter(trade -> trade.getTradeType() == TradeType.BUY)
+                    .filter(trade -> !trade.getTradedAt().isAfter(anchorTrade.getTradedAt()))
+                    .reduce((first, second) -> second)
+                    .orElse(null);
+        }
+
+        return new TradePairContext(buyTrade, sellTrade);
     }
 
     private long validateTradeId(Long tradeHistoryId) {
@@ -317,5 +358,15 @@ public class TradeEvaluationService {
     }
 
     private record TradePairContext(TradeHistory buyTrade, TradeHistory sellTrade) {
+    }
+
+    private record EvaluationScores(
+            BigDecimal entry,
+            BigDecimal exit,
+            BigDecimal risk,
+            BigDecimal diversification,
+            BigDecimal sectorFit,
+            BigDecimal total
+    ) {
     }
 }

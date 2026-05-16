@@ -40,6 +40,24 @@
         getSectorAllocation(userId = 1) {
             return request(`/api/portfolio/${userId}/sector-allocation`);
         },
+        buyStock(payload) {
+            return request('/api/portfolio/buy', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+        },
+        sellStock(payload) {
+            return request('/api/portfolio/sell', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+        },
         getTradeEvaluations(userId = 1) {
             return request(`/api/evaluations/user/${userId}`);
         },

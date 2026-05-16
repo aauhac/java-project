@@ -9,6 +9,9 @@
     <script src="/js/layout.js" defer></script>
     <script src="/js/api.js" defer></script>
     <script src="/js/format.js" defer></script>
+    <script src="/js/charts.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <div id="app-nav"></div>
@@ -16,10 +19,97 @@
 <main class="page-shell">
     <section class="page-hero">
         <h1 class="page-title">포트폴리오 대시보드</h1>
-        <p class="page-description">현재 포트폴리오 요약, 보유 종목, 섹터 비중을 발표용 화면으로 정리합니다.</p>
+        <p class="page-description">차트 조회, 매수/매도 등록, 포트폴리오 요약을 한 화면에서 처리합니다.</p>
     </section>
 
     <div id="page-status"></div>
+
+    <section class="section">
+        <div class="dashboard-top">
+            <div class="card">
+                <div class="chart-toolbar">
+                    <form id="chart-form" class="form-grid">
+                        <label class="form-label">
+                            Symbol
+                            <input class="input" id="symbol" name="symbol" value="NVDA" required>
+                        </label>
+                        <label class="form-label">
+                            Timeframe
+                            <input class="input" id="timeframe" name="timeframe" value="1Day" required>
+                        </label>
+                        <label class="form-label">
+                            Start
+                            <input class="input" id="start" name="start" type="date" required>
+                        </label>
+                        <label class="form-label">
+                            End
+                            <input class="input" id="end" name="end" type="date" required>
+                        </label>
+                    </form>
+                    <button id="load-chart-button" class="button" type="button">차트 조회</button>
+                </div>
+                <div id="chart-status" class="alert alert-info">차트 데이터를 불러올 준비가 되었습니다.</div>
+                <div id="dashboard-chart" class="chart-host"></div>
+            </div>
+
+            <aside class="trade-panel">
+                <div class="card">
+                    <h2 class="section-title">현재 선택 종목</h2>
+                    <div class="small-meta" id="selected-symbol-meta"></div>
+                </div>
+
+                <div class="card">
+                    <h2 class="section-title">매수 등록</h2>
+                    <form id="buy-form" class="form-grid">
+                        <label class="form-label">
+                            User ID
+                            <input class="input" name="userId" type="number" min="1" value="1" required>
+                        </label>
+                        <label class="form-label">
+                            Symbol
+                            <input class="input" name="symbol" required>
+                        </label>
+                        <label class="form-label">
+                            Sector Code
+                            <input class="input" name="sectorCode" placeholder="SEMI" required>
+                        </label>
+                        <label class="form-label">
+                            Price
+                            <input class="input" name="price" type="number" min="0.0001" step="0.0001" required>
+                        </label>
+                        <label class="form-label">
+                            Quantity
+                            <input class="input" name="quantity" type="number" min="1" step="1" required>
+                        </label>
+                        <button class="button" type="submit">매수 등록</button>
+                    </form>
+                </div>
+
+                <div class="card">
+                    <h2 class="section-title">매도 등록</h2>
+                    <form id="sell-form" class="form-grid">
+                        <label class="form-label">
+                            User ID
+                            <input class="input" name="userId" type="number" min="1" value="1" required>
+                        </label>
+                        <label class="form-label">
+                            Symbol
+                            <input class="input" name="symbol" required>
+                        </label>
+                        <label class="form-label">
+                            Price
+                            <input class="input" name="price" type="number" min="0.0001" step="0.0001" required>
+                        </label>
+                        <label class="form-label">
+                            Quantity
+                            <input class="input" name="quantity" type="number" min="1" step="1" required>
+                        </label>
+                        <button class="button" type="submit">매도 등록</button>
+                    </form>
+                </div>
+            </aside>
+        </div>
+    </section>
 
     <section class="section">
         <div id="summary-cards" class="grid cols-4"></div>
@@ -29,7 +119,7 @@
         <div class="section-header">
             <div>
                 <h2 class="section-title">보유 종목</h2>
-                <p class="section-subtitle">차트 보기 버튼으로 종목별 차트 페이지로 이동합니다.</p>
+                <p class="section-subtitle">행의 버튼을 누르면 상단 차트가 해당 종목으로 전환됩니다.</p>
             </div>
         </div>
         <div class="card">
@@ -41,28 +131,101 @@
         <div class="section-header">
             <div>
                 <h2 class="section-title">섹터 비중</h2>
-                <p class="section-subtitle">현재 포트폴리오의 자금 분포를 섹터별로 표현합니다.</p>
+                <p class="section-subtitle">도넛 차트와 상세 비율을 함께 표시합니다.</p>
             </div>
         </div>
         <div class="card">
-            <div id="sector-allocation"></div>
+            <div class="doughnut-wrap">
+                <div class="doughnut-canvas">
+                    <canvas id="sector-doughnut"></canvas>
+                </div>
+                <div id="sector-allocation"></div>
+            </div>
         </div>
     </section>
 </main>
 
 <script>
+    const state = {
+        selectedSymbol: 'NVDA',
+        selectedTimeframe: '1Day',
+        selectedStart: '',
+        selectedEnd: ''
+    };
+
+    let priceChart;
+    let sectorDoughnut;
+
     window.addEventListener('DOMContentLoaded', async () => {
         Layout.mountNavigation('dashboard');
-        const statusHost = document.getElementById('page-status');
-        statusHost.innerHTML = Layout.alert('대시보드 데이터를 불러오는 중입니다.', 'info');
+        initializeDateInputs();
+        syncFormsWithSelectedSymbol();
+        bindEventHandlers();
+        priceChart = Charts.createTradingViewChart('dashboard-chart', {height: 460});
+        sectorDoughnut = Charts.createDoughnutChart('sector-doughnut');
 
+        await refreshPortfolioPanels();
+        await loadChart();
+    });
+
+    function initializeDateInputs() {
+        const end = new Date();
+        const start = new Date();
+        start.setDate(end.getDate() - 60);
+        state.selectedStart = toDateInput(start);
+        state.selectedEnd = toDateInput(end);
+        document.getElementById('start').value = state.selectedStart;
+        document.getElementById('end').value = state.selectedEnd;
+        document.getElementById('symbol').value = state.selectedSymbol;
+        document.getElementById('timeframe').value = state.selectedTimeframe;
+    }
+
+    function bindEventHandlers() {
+        document.getElementById('load-chart-button').addEventListener('click', async () => {
+            readChartFormValues();
+            await loadChart();
+        });
+
+        document.getElementById('chart-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            readChartFormValues();
+            await loadChart();
+        });
+
+        document.getElementById('buy-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            await submitBuy(event.currentTarget);
+        });
+
+        document.getElementById('sell-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            await submitSell(event.currentTarget);
+        });
+
+        window.addEventListener('resize', () => {
+            if (priceChart) {
+                priceChart.resize();
+            }
+        });
+    }
+
+    function readChartFormValues() {
+        state.selectedSymbol = String(document.getElementById('symbol').value || '').trim().toUpperCase() || 'NVDA';
+        state.selectedTimeframe = String(document.getElementById('timeframe').value || '').trim() || '1Day';
+        state.selectedStart = document.getElementById('start').value;
+        state.selectedEnd = document.getElementById('end').value;
+        syncFormsWithSelectedSymbol();
+    }
+
+    async function refreshPortfolioPanels() {
+        const statusHost = document.getElementById('page-status');
+        statusHost.innerHTML = Layout.alert('포트폴리오 데이터를 불러오는 중입니다.', 'info');
         try {
             const [summaryResponse, positionsResponse, sectorsResponse] = await Promise.all([
                 API.getPortfolioSummary(1),
                 API.getPortfolioPositions(1),
                 API.getSectorAllocation(1)
             ]);
-
             renderSummary(summaryResponse.data);
             renderPositions(positionsResponse.data || []);
             renderSectorAllocation(sectorsResponse.data || []);
@@ -70,7 +233,39 @@
         } catch (error) {
             statusHost.innerHTML = Layout.alert(error.message || '대시보드 데이터를 불러오지 못했습니다.', 'error');
         }
-    });
+    }
+
+    async function loadChart() {
+        const chartStatus = document.getElementById('chart-status');
+        chartStatus.className = 'alert alert-info';
+        chartStatus.textContent = '차트 데이터를 불러오는 중입니다.';
+        updateSelectedSymbolMeta();
+
+        try {
+            const payload = await API.getChartBars({
+                symbol: state.selectedSymbol,
+                timeframe: state.selectedTimeframe,
+                start: state.selectedStart,
+                end: state.selectedEnd
+            });
+
+            const bars = Array.isArray(payload?.bars) ? payload.bars : [];
+            if (!bars.length) {
+                priceChart.setBars([]);
+                chartStatus.className = 'alert alert-warning';
+                chartStatus.textContent = '선택한 범위에서 차트 데이터가 없습니다.';
+                return;
+            }
+
+            priceChart.setBars(bars);
+            chartStatus.className = 'alert alert-success';
+            chartStatus.textContent = `${payload.symbol} ${payload.start} ~ ${payload.end} (${bars.length} bars)`;
+        } catch (error) {
+            priceChart.setBars([]);
+            chartStatus.className = 'alert alert-error';
+            chartStatus.textContent = error.message || '차트 데이터를 불러오지 못했습니다.';
+        }
+    }
 
     function renderSummary(summary) {
         const cards = [
@@ -124,21 +319,36 @@
                             <td>${Format.currency(position.marketValue)}</td>
                             <td class="${Format.percentClass(position.profitLoss)}">${Format.currency(position.profitLoss)}</td>
                             <td class="${Format.percentClass(position.returnRate)}">${Format.percent(position.returnRate)}</td>
-                            <td><a class="button-link" href="/chart/index.html?symbol=${encodeURIComponent(position.symbol)}">차트 보기</a></td>
+                            <td><button class="button secondary chart-select" data-symbol="${Layout.escapeHtml(position.symbol)}" type="button">차트 보기</button></td>
                         </tr>
                     `).join('')}
                     </tbody>
                 </table>
             </div>
         `;
+
+        host.querySelectorAll('.chart-select').forEach((button) => {
+            button.addEventListener('click', async () => {
+                state.selectedSymbol = button.dataset.symbol || state.selectedSymbol;
+                document.getElementById('symbol').value = state.selectedSymbol;
+                syncFormsWithSelectedSymbol();
+                await loadChart();
+            });
+        });
     }
 
     function renderSectorAllocation(items) {
         const host = document.getElementById('sector-allocation');
         if (!items.length) {
             host.innerHTML = Layout.empty('섹터 비중 데이터가 없습니다.');
+            sectorDoughnut.setData([], []);
             return;
         }
+
+        sectorDoughnut.setData(
+            items.map(item => item.sectorCode),
+            items.map(item => Number(item.allocationRate) || 0)
+        );
 
         host.innerHTML = `
             <div class="bar-list">
@@ -155,6 +365,73 @@
                 `).join('')}
             </div>
         `;
+    }
+
+    async function submitBuy(form) {
+        const statusHost = document.getElementById('page-status');
+        const formData = new FormData(form);
+        const payload = {
+            userId: Number(formData.get('userId')),
+            symbol: String(formData.get('symbol') || '').trim().toUpperCase(),
+            sectorCode: String(formData.get('sectorCode') || '').trim().toUpperCase(),
+            price: Number(formData.get('price')),
+            quantity: Number(formData.get('quantity'))
+        };
+        try {
+            await API.buyStock(payload);
+            state.selectedSymbol = payload.symbol;
+            document.getElementById('symbol').value = state.selectedSymbol;
+            syncFormsWithSelectedSymbol();
+            statusHost.innerHTML = Layout.alert(`매수 등록 완료: ${payload.symbol}`, 'success');
+            await refreshPortfolioPanels();
+            await loadChart();
+        } catch (error) {
+            statusHost.innerHTML = Layout.alert(error.message || '매수 등록에 실패했습니다.', 'error');
+        }
+    }
+
+    async function submitSell(form) {
+        const statusHost = document.getElementById('page-status');
+        const formData = new FormData(form);
+        const payload = {
+            userId: Number(formData.get('userId')),
+            symbol: String(formData.get('symbol') || '').trim().toUpperCase(),
+            price: Number(formData.get('price')),
+            quantity: Number(formData.get('quantity'))
+        };
+        try {
+            await API.sellStock(payload);
+            state.selectedSymbol = payload.symbol;
+            document.getElementById('symbol').value = state.selectedSymbol;
+            syncFormsWithSelectedSymbol();
+            statusHost.innerHTML = Layout.alert(`매도 등록 완료: ${payload.symbol}`, 'success');
+            await refreshPortfolioPanels();
+            await loadChart();
+        } catch (error) {
+            statusHost.innerHTML = Layout.alert(error.message || '매도 등록에 실패했습니다.', 'error');
+        }
+    }
+
+    function syncFormsWithSelectedSymbol() {
+        const symbol = state.selectedSymbol;
+        const buyForm = document.getElementById('buy-form');
+        const sellForm = document.getElementById('sell-form');
+        buyForm.elements.symbol.value = symbol;
+        sellForm.elements.symbol.value = symbol;
+        updateSelectedSymbolMeta();
+    }
+
+    function updateSelectedSymbolMeta() {
+        document.getElementById('selected-symbol-meta').innerHTML = `
+            <div>심볼 <strong>${Layout.escapeHtml(state.selectedSymbol)}</strong></div>
+            <div>타임프레임 <strong>${Layout.escapeHtml(state.selectedTimeframe)}</strong></div>
+            <div>시작일 <strong>${Layout.escapeHtml(state.selectedStart)}</strong></div>
+            <div>종료일 <strong>${Layout.escapeHtml(state.selectedEnd)}</strong></div>
+        `;
+    }
+
+    function toDateInput(date) {
+        return date.toISOString().slice(0, 10);
     }
 </script>
 </body>
