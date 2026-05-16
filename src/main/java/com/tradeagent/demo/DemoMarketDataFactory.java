@@ -18,7 +18,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-@Component
+// Disabled: using seed-based DataInitializer instead
+// @Component
 public class DemoMarketDataFactory {
 
     private static final int PAST_TRADING_DAYS = 45;

@@ -3,7 +3,8 @@ package com.tradeagent.demo;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
-@Component
+// Disabled: using seed-based DataInitializer instead
+// @Component
 public class DemoDataInitializer implements CommandLineRunner {
 
     private final DemoUserFactory demoUserFactory;

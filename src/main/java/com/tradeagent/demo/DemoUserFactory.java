@@ -3,7 +3,8 @@ package com.tradeagent.demo;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-@Component
+// Disabled: using seed-based DataInitializer instead
+// @Component
 public class DemoUserFactory {
 
     public static final Long DEMO_USER_ID = 1L;

@@ -29,8 +29,6 @@ public class ChartService {
     }
 
     public ChartResponse fetchBars(String symbol, String timeframe, LocalDate start, LocalDate end) {
-        validateCredentials();
-
         String resolvedSymbol = normalizeSymbol(symbol);
         String resolvedTimeframe = normalizeTimeframe(timeframe);
         LocalDate resolvedEnd = end != null ? end : LocalDate.now(ZoneOffset.UTC);
@@ -80,13 +78,6 @@ public class ChartService {
                 .toList();
 
         return new ChartResponse(resolvedSymbol, resolvedTimeframe, resolvedStart, resolvedEnd, bars);
-    }
-
-    private void validateCredentials() {
-        if (!StringUtils.hasText(properties.getApiKey()) || !StringUtils.hasText(properties.getApiSecret())) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "Set ALPACA_API_KEY and ALPACA_API_SECRET before requesting chart data");
-        }
     }
 
     private String normalizeSymbol(String symbol) {

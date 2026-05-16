@@ -1,4 +1,4 @@
-package com.tradeagent.demo;
+package com.tradeagent.config;
 
 import com.tradeagent.common.DateTimeUtil;
 import com.tradeagent.sector.SectorMaster;
@@ -16,19 +16,18 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
-// Disabled: using seed-based DataInitializer instead
-// @Component
-public class DemoSectorFactory {
+@Component
+public class ReferenceDataSeeder {
 
     private final SectorMasterRepository sectorMasterRepository;
     private final SymbolSectorMapRepository symbolSectorMapRepository;
     private final SectorProxyRepository sectorProxyRepository;
     private final SectorScoreRepository sectorScoreRepository;
 
-    public DemoSectorFactory(SectorMasterRepository sectorMasterRepository,
-                             SymbolSectorMapRepository symbolSectorMapRepository,
-                             SectorProxyRepository sectorProxyRepository,
-                             SectorScoreRepository sectorScoreRepository) {
+    public ReferenceDataSeeder(SectorMasterRepository sectorMasterRepository,
+                               SymbolSectorMapRepository symbolSectorMapRepository,
+                               SectorProxyRepository sectorProxyRepository,
+                               SectorScoreRepository sectorScoreRepository) {
         this.sectorMasterRepository = sectorMasterRepository;
         this.symbolSectorMapRepository = symbolSectorMapRepository;
         this.sectorProxyRepository = sectorProxyRepository;

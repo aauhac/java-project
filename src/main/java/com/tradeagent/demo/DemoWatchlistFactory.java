@@ -7,7 +7,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
-@Component
+// Disabled: using seed-based DataInitializer instead
+// @Component
 public class DemoWatchlistFactory {
 
     private final WatchlistRepository watchlistRepository;

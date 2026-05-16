@@ -9,7 +9,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
 
-@Component
+// Disabled: using seed-based DataInitializer instead
+// @Component
 public class DemoPortfolioFactory {
 
     private final PortfolioRepository portfolioRepository;

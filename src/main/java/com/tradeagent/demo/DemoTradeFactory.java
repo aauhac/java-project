@@ -13,7 +13,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
-@Component
+// Disabled: using seed-based DataInitializer instead
+// @Component
 public class DemoTradeFactory {
 
     private final TradeHistoryRepository tradeHistoryRepository;
