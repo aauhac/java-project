@@ -23,26 +23,23 @@ public class SectorScoreCalculator {
         LocalDate resolvedDate = date != null ? date : DateTimeUtil.today();
         BigDecimal newsVolume = newsSignalAggregator.calculateNewsVolumeScore(sectorCode, resolvedDate);
         BigDecimal newsTone = newsSignalAggregator.calculateNewsToneScore(sectorCode, resolvedDate);
-        BigDecimal priceMomentum = priceMomentumCalculator.calculatePriceMomentumScore(sectorCode, resolvedDate);
-        BigDecimal volumeSpike = priceMomentumCalculator.calculateVolumeSpikeScore(sectorCode, resolvedDate);
-        BigDecimal breadth = priceMomentumCalculator.calculateBreadthScore(sectorCode, resolvedDate);
-
-        BigDecimal total = newsVolume.multiply(BigDecimal.valueOf(0.25))
-                .add(newsTone.multiply(BigDecimal.valueOf(0.15)))
-                .add(priceMomentum.multiply(BigDecimal.valueOf(0.25)))
-                .add(volumeSpike.multiply(BigDecimal.valueOf(0.20)))
-                .add(breadth.multiply(BigDecimal.valueOf(0.15)))
+        BigDecimal keywordStrength = priceMomentumCalculator.calculateBreadthScore(sectorCode, resolvedDate);
+        BigDecimal total = newsVolume.multiply(BigDecimal.valueOf(0.5))
+                .add(newsTone.multiply(BigDecimal.valueOf(0.3)))
+                .add(keywordStrength.multiply(BigDecimal.valueOf(0.2)))
                 .setScale(2, RoundingMode.HALF_UP);
 
         return new SectorScore(
                 sectorCode,
                 resolvedDate,
-                newsVolume,
-                newsTone,
-                priceMomentum,
-                volumeSpike,
-                breadth,
-                total
+                0,
+                BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP),
+                newsVolume.setScale(2, RoundingMode.HALF_UP),
+                newsTone.setScale(2, RoundingMode.HALF_UP),
+                keywordStrength.setScale(2, RoundingMode.HALF_UP),
+                total,
+                "NEUTRAL",
+                DateTimeUtil.nowUtc()
         );
     }
 }

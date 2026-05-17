@@ -58,21 +58,33 @@
     <section class="section">
         <div class="section-header">
             <div>
-                <h2 class="section-title">섹터 진단</h2>
-                <p class="section-subtitle">섹터 점수와 포트폴리오 노출을 비교합니다.</p>
+                <h2 class="section-title">섹터 동향 분석</h2>
+                <p class="section-subtitle">날짜별 뉴스 동향 점수와 포트폴리오 일치도를 비교합니다.</p>
+            </div>
+            <div class="form-grid" style="grid-template-columns: repeat(2, minmax(140px, 1fr)); max-width: 320px;">
+                <label class="form-label">
+                    기준 날짜
+                    <input class="input" id="trend-date" type="date">
+                </label>
+                <button class="button" id="analyze-trend-button" type="button" style="align-self: end;">동향 분석</button>
             </div>
         </div>
         <div id="sector-scoreboard" class="grid cols-4"></div>
         <div id="diagnostic-cards" class="grid cols-2" style="margin-top: 16px;"></div>
         <div class="card" id="exposure-table" style="margin-top: 16px;"></div>
-        <div class="card feedback-box" id="sector-feedback-box" style="margin-top: 16px;"></div>
     </section>
 </main>
 
 <script>
+    const trendState = {
+        selectedDate: ''
+    };
+
     window.addEventListener('DOMContentLoaded', async () => {
         Layout.mountNavigation('analysis');
         const statusHost = document.getElementById('page-status');
+        initializeTrendDate();
+        bindTrendControls();
         statusHost.innerHTML = Layout.alert('분석 데이터를 불러오는 중입니다.', 'info');
 
         try {
@@ -86,8 +98,7 @@
                 patternsResponse,
                 opportunityFeedbackResponse,
                 sectorScoresResponse,
-                sectorDiagnosticResponse,
-                sectorFeedbackResponse
+                sectorTrendMatchResponse
             ] = await Promise.all([
                 API.getEvaluationSummary(1),
                 API.getTradeEvaluations(1),
@@ -97,9 +108,8 @@
                 API.getAvoidedLosses(1),
                 API.getOpportunityPatterns(1),
                 API.getOpportunityFeedback(1),
-                API.getSectorScores(),
-                API.getSectorDiagnostic(1),
-                API.getSectorFeedback(1)
+                API.getSectorTrends(trendState.selectedDate),
+                API.getPortfolioTrendMatch(1, trendState.selectedDate)
             ]);
 
             renderEvaluationSummary(evalSummaryResponse.data);
@@ -113,9 +123,8 @@
             renderOpportunityFeedback(opportunityFeedbackResponse.data);
 
             renderScores(sectorScoresResponse.data || []);
-            renderDiagnostic(sectorDiagnosticResponse.data);
-            renderExposure(sectorDiagnosticResponse.data?.exposures || []);
-            renderSectorFeedback(sectorFeedbackResponse.data);
+            renderTrendMatch(sectorTrendMatchResponse.data);
+            renderExposure(sectorTrendMatchResponse.data?.exposures || []);
 
             statusHost.innerHTML = Layout.alert('분석 데이터 로딩이 완료되었습니다.', 'success');
         } catch (error) {
@@ -286,22 +295,27 @@
                 <div class="stat-card__label">${Layout.escapeHtml(score.sectorCode)}</div>
                 <div class="stat-card__value">${Format.score(score.totalSectorScore)}</div>
                 <div>${Layout.statusPill(score.status)}</div>
-                <div class="stat-card__hint">${Layout.escapeHtml(score.sectorName)} / ${Format.date(score.scoreDate)}</div>
+                <div class="stat-card__hint">${Layout.escapeHtml(score.sectorName)} / ${Format.date(score.scoreDate)} / 기사 ${Format.integer(score.articleCount || 0)}건</div>
+                <div class="muted">Tone ${Format.number(score.avgToneScore, 2)} / Keyword ${Format.number(score.keywordStrengthScore, 2)}</div>
                 <div class="bar-track"><div class="bar-fill ${score.status === 'STRONG' ? 'success' : score.status === 'WEAK' ? 'danger' : ''}" style="width: ${Math.min(Number(score.totalSectorScore) || 0, 100)}%"></div></div>
             </article>
         `).join('');
     }
 
-    function renderDiagnostic(diagnostic) {
+    function renderTrendMatch(diagnostic) {
+        if (!diagnostic) {
+            document.getElementById('diagnostic-cards').innerHTML = Layout.empty('포트폴리오 동향 일치도 데이터가 없습니다.');
+            return;
+        }
         document.getElementById('diagnostic-cards').innerHTML = `
             <article class="card stat-card">
-                <div class="stat-card__label">강한 섹터 노출</div>
-                <div class="stat-card__value positive">${Format.percent(diagnostic.strongExposure)}</div>
-                <div class="stat-card__hint">70점 이상 섹터의 포트폴리오 노출 비율</div>
+                <div class="stat-card__label">동향 일치도</div>
+                <div class="stat-card__value">${Format.score(diagnostic.trendMatchScore)}</div>
+                <div class="stat-card__hint">${Format.date(diagnostic.matchDate)} 기준 포트폴리오와 섹터 뉴스 흐름의 일치도</div>
             </article>
             <article class="card stat-card">
-                <div class="stat-card__label">약한 섹터 노출</div>
-                <div class="stat-card__value negative">${Format.percent(diagnostic.weakExposure)}</div>
+                <div class="stat-card__label">강/약 노출</div>
+                <div class="stat-card__value">강 ${Format.percent(diagnostic.strongExposure)} / 약 ${Format.percent(diagnostic.weakExposure)}</div>
                 <div class="stat-card__hint">${Layout.escapeHtml(diagnostic.message || '진단 문장이 없습니다.')}</div>
             </article>
         `;
@@ -339,11 +353,42 @@
         `;
     }
 
-    function renderSectorFeedback(feedback) {
-        document.getElementById('sector-feedback-box').innerHTML = `
-            <div>${Layout.escapeHtml(feedback.message || '피드백이 없습니다.')}</div>
-            <div class="muted" style="margin-top:10px;">Provider: ${Layout.escapeHtml(feedback.providerType || '-')} / ${Format.dateTime(feedback.createdAt)}</div>
-        `;
+    function initializeTrendDate() {
+        trendState.selectedDate = new Date().toISOString().slice(0, 10);
+        document.getElementById('trend-date').value = trendState.selectedDate;
+    }
+
+    function bindTrendControls() {
+        document.getElementById('trend-date').addEventListener('change', async (event) => {
+            trendState.selectedDate = event.currentTarget.value;
+            await reloadTrendPanels(false);
+        });
+
+        document.getElementById('analyze-trend-button').addEventListener('click', async () => {
+            await reloadTrendPanels(true);
+        });
+    }
+
+    async function reloadTrendPanels(runAnalysis) {
+        const statusHost = document.getElementById('page-status');
+        statusHost.innerHTML = Layout.alert(runAnalysis ? '섹터 동향 분석을 실행하는 중입니다.' : '선택 날짜의 섹터 동향을 불러오는 중입니다.', 'info');
+        try {
+            const [trendsResponse, trendMatchResponse] = runAnalysis
+                ? await Promise.all([
+                    API.analyzeSectorTrend(trendState.selectedDate),
+                    API.getPortfolioTrendMatch(1, trendState.selectedDate)
+                ])
+                : await Promise.all([
+                    API.getSectorTrends(trendState.selectedDate),
+                    API.getPortfolioTrendMatch(1, trendState.selectedDate)
+                ]);
+            renderScores(trendsResponse.data || []);
+            renderTrendMatch(trendMatchResponse.data);
+            renderExposure(trendMatchResponse.data?.exposures || []);
+            statusHost.innerHTML = Layout.alert(runAnalysis ? '섹터 동향 분석이 완료되었습니다.' : '날짜별 섹터 동향을 불러왔습니다.', 'success');
+        } catch (error) {
+            statusHost.innerHTML = Layout.alert(error.message || '섹터 동향을 불러오지 못했습니다.', 'error');
+        }
     }
 </script>
 </body>

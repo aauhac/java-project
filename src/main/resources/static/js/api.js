@@ -85,6 +85,20 @@
         getSectorScores() {
             return request('/api/sectors/scores');
         },
+        analyzeSectorTrend(date) {
+            return request(`/api/sectors/analyze-trend${buildQuery({date})}`, {
+                method: 'POST'
+            });
+        },
+        getSectorTrends(date) {
+            return request(`/api/sectors/trends${buildQuery({date})}`);
+        },
+        getSectorTrendHistory(sectorCode, from, to) {
+            return request(`/api/sectors/${encodeURIComponent(sectorCode)}/trends${buildQuery({from, to})}`);
+        },
+        getPortfolioTrendMatch(userId = 1, date) {
+            return request(`/api/sectors/user/${userId}/trend-match${buildQuery({date})}`);
+        },
         getSectorDiagnostic(userId = 1) {
             return request(`/api/sectors/user/${userId}/diagnostic`);
         },

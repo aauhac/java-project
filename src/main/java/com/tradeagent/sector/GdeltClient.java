@@ -6,6 +6,7 @@ import com.tradeagent.config.GdeltProperties;
 import com.tradeagent.common.ErrorCode;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.math.BigDecimal;
@@ -54,7 +55,7 @@ public class GdeltClient {
                     .block(Duration.ofSeconds(gdeltProperties.getTimeoutSeconds()));
 
             if (response == null || response.articles() == null || response.articles().isEmpty()) {
-                return buildFallbackNews(resolvedSectorCode, resolvedDate);
+                return List.of();
             }
 
             return response.articles().stream()
@@ -68,8 +69,11 @@ public class GdeltClient {
                             parseSeenDate(article.seendate(), resolvedDate)
                     ))
                     .toList();
-        } catch (Exception ex) {
-            return buildFallbackNews(resolvedSectorCode, resolvedDate);
+        } catch (WebClientResponseException ex) {
+            throw new ExternalApiException(ErrorCode.GDELT_API_ERROR,
+                    "GDELT request failed with status " + ex.getStatusCode().value());
+        } catch (RuntimeException ex) {
+            throw new ExternalApiException(ErrorCode.GDELT_API_ERROR, "GDELT request failed");
         }
     }
 
@@ -89,40 +93,6 @@ public class GdeltClient {
 
     private String buildQuery(String sectorCode) {
         return QUERY_BY_SECTOR.getOrDefault(sectorCode, sectorCode);
-    }
-
-    private List<NewsEvent> buildFallbackNews(String sectorCode, LocalDate date) {
-        return switch (sectorCode) {
-            case "SEMI" -> List.of(
-                    fallback(sectorCode, "NVDA", "Semiconductor demand remains firm across AI servers.", date, BigDecimal.valueOf(4.2)),
-                    fallback(sectorCode, "TSM", "Foundry utilization improves as chip orders rebound.", date.minusDays(1), BigDecimal.valueOf(3.4))
-            );
-            case "AIINF" -> List.of(
-                    fallback(sectorCode, "MSFT", "Cloud infrastructure spending supports AI platform growth.", date, BigDecimal.valueOf(3.8)),
-                    fallback(sectorCode, "AMZN", "Datacenter expansion plans lift AI infrastructure sentiment.", date.minusDays(1), BigDecimal.valueOf(2.9))
-            );
-            case "EV" -> List.of(
-                    fallback(sectorCode, "TSLA", "Electric vehicle demand stays mixed amid pricing pressure.", date, BigDecimal.valueOf(-1.8)),
-                    fallback(sectorCode, "RIVN", "Battery supply costs remain volatile for EV makers.", date.minusDays(1), BigDecimal.valueOf(-1.2))
-            );
-            case "BIO" -> List.of(
-                    fallback(sectorCode, "MRNA", "Biotech pipeline optimism improves on trial updates.", date, BigDecimal.valueOf(2.5)),
-                    fallback(sectorCode, "AMGN", "Drug approval expectations support biotech sentiment.", date.minusDays(1), BigDecimal.valueOf(2.1))
-            );
-            default -> List.of(fallback(sectorCode, null, sectorCode + " sector update", date, BigDecimal.ZERO));
-        };
-    }
-
-    private NewsEvent fallback(String sectorCode, String symbol, String title, LocalDate date, BigDecimal toneScore) {
-        return new NewsEvent(
-                sectorCode,
-                symbol,
-                title,
-                "fallback",
-                "https://www.gdeltproject.org",
-                toneScore.setScale(2, RoundingMode.HALF_UP),
-                date.atStartOfDay()
-        );
     }
 
     private String inferSymbol(String title, String sectorCode) {

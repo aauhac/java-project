@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -19,28 +20,26 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class PortfolioSectorDiagnosticService {
 
-    private static final BigDecimal STRONG_THRESHOLD = BigDecimal.valueOf(70);
-    private static final BigDecimal WEAK_THRESHOLD = BigDecimal.valueOf(40);
-
     private final PortfolioRepository portfolioRepository;
     private final SectorMasterRepository sectorMasterRepository;
-    private final SectorAnalysisService sectorAnalysisService;
+    private final SectorTrendAnalysisService sectorTrendAnalysisService;
     private final SectorFeedbackService sectorFeedbackService;
 
     public PortfolioSectorDiagnosticService(PortfolioRepository portfolioRepository,
                                             SectorMasterRepository sectorMasterRepository,
-                                            SectorAnalysisService sectorAnalysisService,
+                                            SectorTrendAnalysisService sectorTrendAnalysisService,
                                             SectorFeedbackService sectorFeedbackService) {
         this.portfolioRepository = portfolioRepository;
         this.sectorMasterRepository = sectorMasterRepository;
-        this.sectorAnalysisService = sectorAnalysisService;
+        this.sectorTrendAnalysisService = sectorTrendAnalysisService;
         this.sectorFeedbackService = sectorFeedbackService;
     }
 
     public PortfolioSectorDiagnosticDto diagnose(Long userId) {
-        List<SectorExposureDto> exposures = getSectorExposureBreakdown(userId);
-        BigDecimal strongExposure = calculateStrongExposure(userId);
-        BigDecimal weakExposure = calculateWeakExposure(userId);
+        List<SectorTrendDto> latestScores = sectorTrendAnalysisService.getLatestTrendScores();
+        List<SectorExposureDto> exposures = getSectorExposureBreakdown(userId, latestScores);
+        BigDecimal strongExposure = sumExposureByStatus(exposures, "STRONG");
+        BigDecimal weakExposure = sumExposureByStatus(exposures, "WEAK");
         PortfolioSectorDiagnosticDto draft = new PortfolioSectorDiagnosticDto(
                 strongExposure,
                 weakExposure,
@@ -55,31 +54,39 @@ public class PortfolioSectorDiagnosticService {
         );
     }
 
-    public BigDecimal calculateStrongExposure(Long userId) {
-        return getSectorExposureBreakdown(userId).stream()
-                .filter(exposure -> exposure.sectorScore().compareTo(STRONG_THRESHOLD) >= 0)
-                .map(SectorExposureDto::portfolioRate)
-                .reduce(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP), BigDecimal::add)
+    public PortfolioTrendMatchDto calculateTrendMatch(Long userId, LocalDate date) {
+        List<SectorTrendDto> trendScores = sectorTrendAnalysisService.getTrendScores(date);
+        List<SectorExposureDto> exposures = getSectorExposureBreakdown(userId, trendScores);
+        BigDecimal strongExposure = sumExposureByStatus(exposures, "STRONG");
+        BigDecimal weakExposure = sumExposureByStatus(exposures, "WEAK");
+        BigDecimal trendMatchScore = exposures.stream()
+                .map(exposure -> exposure.portfolioRate()
+                        .multiply(exposure.sectorScore())
+                        .divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP))
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .setScale(2, RoundingMode.HALF_UP);
-    }
-
-    public BigDecimal calculateWeakExposure(Long userId) {
-        return getSectorExposureBreakdown(userId).stream()
-                .filter(exposure -> exposure.sectorScore().compareTo(WEAK_THRESHOLD) <= 0)
-                .map(SectorExposureDto::portfolioRate)
-                .reduce(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP), BigDecimal::add)
-                .setScale(2, RoundingMode.HALF_UP);
+        return new PortfolioTrendMatchDto(
+                date != null ? date : LocalDate.now(),
+                trendMatchScore,
+                strongExposure,
+                weakExposure,
+                buildTrendMatchMessage(trendMatchScore, strongExposure, weakExposure),
+                exposures
+        );
     }
 
     public List<SectorExposureDto> getSectorExposureBreakdown(Long userId) {
+        return getSectorExposureBreakdown(userId, sectorTrendAnalysisService.getLatestTrendScores());
+    }
+
+    private List<SectorExposureDto> getSectorExposureBreakdown(Long userId, List<SectorTrendDto> trendScores) {
         List<PortfolioPosition> positions = portfolioRepository.findByUserId(userId);
         if (positions.isEmpty()) {
             return List.of();
         }
 
-        List<SectorScoreDto> latestScores = sectorAnalysisService.getLatestSectorScores();
-        Map<String, SectorScoreDto> sectorScoreMap = latestScores.stream()
-                .collect(Collectors.toMap(SectorScoreDto::sectorCode, Function.identity()));
+        Map<String, SectorTrendDto> sectorScoreMap = trendScores.stream()
+                .collect(Collectors.toMap(SectorTrendDto::sectorCode, Function.identity()));
         Map<String, String> sectorNameMap = sectorMasterRepository.findAllByOrderBySectorCodeAsc().stream()
                 .collect(Collectors.toMap(SectorMaster::getSectorCode, SectorMaster::getSectorName));
 
@@ -103,10 +110,10 @@ public class PortfolioSectorDiagnosticService {
                             .divide(totalExposure, 6, RoundingMode.HALF_UP)
                             .multiply(BigDecimal.valueOf(100))
                             .setScale(2, RoundingMode.HALF_UP);
-                    SectorScoreDto sectorScore = sectorScoreMap.get(entry.getKey());
+                    SectorTrendDto sectorScore = sectorScoreMap.get(entry.getKey());
                     BigDecimal totalSectorScore = sectorScore != null
                             ? sectorScore.totalSectorScore().setScale(2, RoundingMode.HALF_UP)
-                            : BigDecimal.valueOf(50).setScale(2, RoundingMode.HALF_UP);
+                            : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
                     String status = sectorScore != null ? sectorScore.status() : "NEUTRAL";
                     return new SectorExposureDto(
                             entry.getKey(),
@@ -120,4 +127,21 @@ public class PortfolioSectorDiagnosticService {
                 .toList();
     }
 
+    private BigDecimal sumExposureByStatus(List<SectorExposureDto> exposures, String status) {
+        return exposures.stream()
+                .filter(exposure -> status.equals(exposure.status()))
+                .map(SectorExposureDto::portfolioRate)
+                .reduce(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP), BigDecimal::add)
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private String buildTrendMatchMessage(BigDecimal trendMatchScore, BigDecimal strongExposure, BigDecimal weakExposure) {
+        if (trendMatchScore.compareTo(BigDecimal.valueOf(70)) >= 0) {
+            return "현재 포트폴리오는 최근 강한 섹터 흐름과 잘 맞고 있습니다.";
+        }
+        if (weakExposure.compareTo(strongExposure) > 0) {
+            return "약한 섹터 노출이 더 높아 최근 뉴스 동향과의 일치도가 낮습니다.";
+        }
+        return "중립적인 흐름입니다. 강한 섹터 노출을 조금 더 늘릴 여지가 있습니다.";
+    }
 }

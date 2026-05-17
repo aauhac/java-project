@@ -5,15 +5,12 @@ import com.tradeagent.sector.SectorMaster;
 import com.tradeagent.sector.SectorMasterRepository;
 import com.tradeagent.sector.SectorProxy;
 import com.tradeagent.sector.SectorProxyRepository;
-import com.tradeagent.sector.SectorScore;
-import com.tradeagent.sector.SectorScoreRepository;
 import com.tradeagent.sector.SymbolSectorMap;
 import com.tradeagent.sector.SymbolSectorMapRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.util.List;
 
 @Component
@@ -22,16 +19,13 @@ public class ReferenceDataSeeder {
     private final SectorMasterRepository sectorMasterRepository;
     private final SymbolSectorMapRepository symbolSectorMapRepository;
     private final SectorProxyRepository sectorProxyRepository;
-    private final SectorScoreRepository sectorScoreRepository;
 
     public ReferenceDataSeeder(SectorMasterRepository sectorMasterRepository,
                                SymbolSectorMapRepository symbolSectorMapRepository,
-                               SectorProxyRepository sectorProxyRepository,
-                               SectorScoreRepository sectorScoreRepository) {
+                               SectorProxyRepository sectorProxyRepository) {
         this.sectorMasterRepository = sectorMasterRepository;
         this.symbolSectorMapRepository = symbolSectorMapRepository;
         this.sectorProxyRepository = sectorProxyRepository;
-        this.sectorScoreRepository = sectorScoreRepository;
     }
 
     @Transactional
@@ -39,7 +33,6 @@ public class ReferenceDataSeeder {
         seedMasters();
         seedMappings();
         seedProxies();
-        seedScores();
     }
 
     private void seedMasters() {
@@ -103,28 +96,5 @@ public class ReferenceDataSeeder {
             sectorProxyRepository.findBySectorCodeAndProxySymbol(proxy.getSectorCode(), proxy.getProxySymbol())
                     .orElseGet(() -> sectorProxyRepository.save(proxy));
         }
-    }
-
-    private void seedScores() {
-        LocalDate today = DateTimeUtil.today();
-        seedScore(today, "SEMI", "84.00", "82.00", "91.00", "86.00", "92.00", "87.00");
-        seedScore(today, "AIINF", "80.00", "78.00", "85.00", "79.00", "84.00", "81.00");
-        seedScore(today, "EV", "45.00", "40.00", "38.00", "44.00", "43.00", "42.00");
-        seedScore(today, "BIO", "56.00", "54.00", "57.00", "53.00", "55.00", "55.00");
-    }
-
-    private void seedScore(LocalDate date, String sectorCode, String newsVolume, String newsTone,
-                           String momentum, String volumeSpike, String breadth, String total) {
-        sectorScoreRepository.findBySectorCodeAndScoreDate(sectorCode, date)
-                .orElseGet(() -> sectorScoreRepository.save(new SectorScore(
-                        sectorCode,
-                        date,
-                        new BigDecimal(newsVolume),
-                        new BigDecimal(newsTone),
-                        new BigDecimal(momentum),
-                        new BigDecimal(volumeSpike),
-                        new BigDecimal(breadth),
-                        new BigDecimal(total)
-                )));
     }
 }

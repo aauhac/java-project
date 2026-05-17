@@ -20,56 +20,37 @@ public class SectorAnalysisService {
     private final SectorMasterRepository sectorMasterRepository;
     private final SymbolSectorMapRepository symbolSectorMapRepository;
     private final SectorProxyRepository sectorProxyRepository;
-    private final SectorScoreRepository sectorScoreRepository;
-    private final SectorScoreCalculator sectorScoreCalculator;
     private final NewsSignalAggregator newsSignalAggregator;
+    private final SectorTrendAnalysisService sectorTrendAnalysisService;
 
     public SectorAnalysisService(SectorMasterRepository sectorMasterRepository,
                                  SymbolSectorMapRepository symbolSectorMapRepository,
                                  SectorProxyRepository sectorProxyRepository,
-                                 SectorScoreRepository sectorScoreRepository,
-                                 SectorScoreCalculator sectorScoreCalculator,
-                                 NewsSignalAggregator newsSignalAggregator) {
+                                 NewsSignalAggregator newsSignalAggregator,
+                                 SectorTrendAnalysisService sectorTrendAnalysisService) {
         this.sectorMasterRepository = sectorMasterRepository;
         this.symbolSectorMapRepository = symbolSectorMapRepository;
         this.sectorProxyRepository = sectorProxyRepository;
-        this.sectorScoreRepository = sectorScoreRepository;
-        this.sectorScoreCalculator = sectorScoreCalculator;
         this.newsSignalAggregator = newsSignalAggregator;
+        this.sectorTrendAnalysisService = sectorTrendAnalysisService;
     }
 
     @Transactional
-    public List<SectorScoreDto> calculateTodaySectorScores() {
+    public List<SectorTrendDto> calculateTodaySectorScores() {
         ensureSeedData();
-        LocalDate today = DateTimeUtil.today();
-        return sectorMasterRepository.findAllByOrderBySectorCodeAsc().stream()
-                .map(master -> upsertSectorScore(master, today))
-                .sorted(Comparator.comparing(SectorScoreDto::totalSectorScore).reversed())
-                .toList();
+        return sectorTrendAnalysisService.analyzeToday();
     }
 
     @Transactional
-    public List<SectorScoreDto> getLatestSectorScores() {
+    public List<SectorTrendDto> getLatestSectorScores() {
         ensureSeedData();
-        return sectorMasterRepository.findAllByOrderBySectorCodeAsc().stream()
-                .map(master -> sectorScoreRepository.findTopBySectorCodeOrderByScoreDateDesc(master.getSectorCode())
-                        .map(score -> toDto(master, score))
-                        .orElseGet(() -> upsertSectorScore(master, DateTimeUtil.today())))
-                .sorted(Comparator.comparing(SectorScoreDto::totalSectorScore).reversed())
-                .toList();
+        return sectorTrendAnalysisService.getLatestTrendScores();
     }
 
     @Transactional
-    public SectorScoreDto getSectorScore(String sectorCode) {
+    public SectorTrendDto getSectorScore(String sectorCode) {
         ensureSeedData();
-        String resolvedSectorCode = normalizeSectorCode(sectorCode);
-        SectorMaster master = sectorMasterRepository.findBySectorCode(resolvedSectorCode)
-                .orElseThrow(() -> new NotFoundException(ErrorCode.SECTOR_NOT_FOUND,
-                        "sector not found for code " + resolvedSectorCode));
-
-        return sectorScoreRepository.findTopBySectorCodeOrderByScoreDateDesc(resolvedSectorCode)
-                .map(score -> toDto(master, score))
-                .orElseGet(() -> upsertSectorScore(master, DateTimeUtil.today()));
+        return sectorTrendAnalysisService.getLatestTrendScore(sectorCode);
     }
 
     @Transactional
@@ -92,40 +73,6 @@ public class SectorAnalysisService {
                         event.getPublishedAt()
                 ))
                 .toList();
-    }
-
-    private SectorScoreDto upsertSectorScore(SectorMaster master, LocalDate date) {
-        SectorScore calculated = sectorScoreCalculator.calculate(master.getSectorCode(), date);
-        SectorScore saved = sectorScoreRepository.findBySectorCodeAndScoreDate(master.getSectorCode(), date)
-                .map(existing -> {
-                    existing.updateScores(
-                            calculated.getNewsVolumeScore(),
-                            calculated.getNewsToneScore(),
-                            calculated.getPriceMomentumScore(),
-                            calculated.getVolumeSpikeScore(),
-                            calculated.getBreadthScore(),
-                            calculated.getTotalSectorScore()
-                    );
-                    return sectorScoreRepository.save(existing);
-                })
-                .orElseGet(() -> sectorScoreRepository.save(calculated));
-
-        return toDto(master, saved);
-    }
-
-    private SectorScoreDto toDto(SectorMaster master, SectorScore score) {
-        return new SectorScoreDto(
-                master.getSectorCode(),
-                master.getSectorName(),
-                score.getScoreDate(),
-                score.getNewsVolumeScore().setScale(2, RoundingMode.HALF_UP),
-                score.getNewsToneScore().setScale(2, RoundingMode.HALF_UP),
-                score.getPriceMomentumScore().setScale(2, RoundingMode.HALF_UP),
-                score.getVolumeSpikeScore().setScale(2, RoundingMode.HALF_UP),
-                score.getBreadthScore().setScale(2, RoundingMode.HALF_UP),
-                score.getTotalSectorScore().setScale(2, RoundingMode.HALF_UP),
-                statusFor(score.getTotalSectorScore())
-        );
     }
 
     private void ensureSeedData() {
@@ -195,15 +142,5 @@ public class SectorAnalysisService {
             throw new ValidationException(ErrorCode.INVALID_INPUT, "sectorCode must not be blank");
         }
         return sectorCode.trim().toUpperCase();
-    }
-
-    private String statusFor(BigDecimal totalScore) {
-        if (totalScore.compareTo(BigDecimal.valueOf(70)) >= 0) {
-            return "STRONG";
-        }
-        if (totalScore.compareTo(BigDecimal.valueOf(40)) <= 0) {
-            return "WEAK";
-        }
-        return "NEUTRAL";
     }
 }

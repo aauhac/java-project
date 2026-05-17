@@ -13,4 +13,6 @@ public interface SectorScoreRepository extends JpaRepository<SectorScore, Long> 
     Optional<SectorScore> findTopBySectorCodeOrderByScoreDateDesc(String sectorCode);
 
     List<SectorScore> findByScoreDateOrderByTotalSectorScoreDesc(LocalDate scoreDate);
+
+    List<SectorScore> findBySectorCodeAndScoreDateBetweenOrderByScoreDateAsc(String sectorCode, LocalDate from, LocalDate to);
 }

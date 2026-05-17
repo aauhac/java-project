@@ -9,6 +9,7 @@ import jakarta.persistence.UniqueConstraint;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(
@@ -28,48 +29,59 @@ public class SectorScore extends BaseEntity {
     @Column(name = "score_date", nullable = false)
     private LocalDate scoreDate;
 
+    @Column(name = "article_count", nullable = false)
+    private Integer articleCount;
+
+    @Column(name = "avg_tone_score", nullable = false, precision = 10, scale = 4)
+    private BigDecimal avgToneScore;
+
     @Column(name = "news_volume_score", nullable = false, precision = 6, scale = 2)
     private BigDecimal newsVolumeScore;
 
     @Column(name = "news_tone_score", nullable = false, precision = 6, scale = 2)
     private BigDecimal newsToneScore;
 
-    @Column(name = "price_momentum_score", nullable = false, precision = 6, scale = 2)
-    private BigDecimal priceMomentumScore;
+    @Column(name = "keyword_strength_score", nullable = false, precision = 6, scale = 2)
+    private BigDecimal keywordStrengthScore;
 
-    @Column(name = "volume_spike_score", nullable = false, precision = 6, scale = 2)
-    private BigDecimal volumeSpikeScore;
-
-    @Column(name = "breadth_score", nullable = false, precision = 6, scale = 2)
-    private BigDecimal breadthScore;
+    @Column(nullable = false, length = 20)
+    private String status;
 
     @Column(name = "total_sector_score", nullable = false, precision = 6, scale = 2)
     private BigDecimal totalSectorScore;
 
+    @Column(name = "analyzed_at", nullable = false)
+    private LocalDateTime analyzedAt;
+
     protected SectorScore() {
     }
 
-    public SectorScore(String sectorCode, LocalDate scoreDate, BigDecimal newsVolumeScore, BigDecimal newsToneScore,
-                       BigDecimal priceMomentumScore, BigDecimal volumeSpikeScore, BigDecimal breadthScore,
-                       BigDecimal totalSectorScore) {
+    public SectorScore(String sectorCode, LocalDate scoreDate, Integer articleCount, BigDecimal avgToneScore,
+                       BigDecimal newsVolumeScore, BigDecimal newsToneScore, BigDecimal keywordStrengthScore,
+                       BigDecimal totalSectorScore, String status, LocalDateTime analyzedAt) {
         this.sectorCode = sectorCode;
         this.scoreDate = scoreDate;
+        this.articleCount = articleCount;
+        this.avgToneScore = avgToneScore;
         this.newsVolumeScore = newsVolumeScore;
         this.newsToneScore = newsToneScore;
-        this.priceMomentumScore = priceMomentumScore;
-        this.volumeSpikeScore = volumeSpikeScore;
-        this.breadthScore = breadthScore;
+        this.keywordStrengthScore = keywordStrengthScore;
         this.totalSectorScore = totalSectorScore;
+        this.status = status;
+        this.analyzedAt = analyzedAt;
     }
 
-    public void updateScores(BigDecimal newsVolumeScore, BigDecimal newsToneScore, BigDecimal priceMomentumScore,
-                             BigDecimal volumeSpikeScore, BigDecimal breadthScore, BigDecimal totalSectorScore) {
+    public void updateTrend(Integer articleCount, BigDecimal avgToneScore, BigDecimal newsVolumeScore,
+                            BigDecimal newsToneScore, BigDecimal keywordStrengthScore,
+                            BigDecimal totalSectorScore, String status, LocalDateTime analyzedAt) {
+        this.articleCount = articleCount;
+        this.avgToneScore = avgToneScore;
         this.newsVolumeScore = newsVolumeScore;
         this.newsToneScore = newsToneScore;
-        this.priceMomentumScore = priceMomentumScore;
-        this.volumeSpikeScore = volumeSpikeScore;
-        this.breadthScore = breadthScore;
+        this.keywordStrengthScore = keywordStrengthScore;
         this.totalSectorScore = totalSectorScore;
+        this.status = status;
+        this.analyzedAt = analyzedAt;
     }
 
     public String getSectorCode() {
@@ -80,6 +92,14 @@ public class SectorScore extends BaseEntity {
         return scoreDate;
     }
 
+    public Integer getArticleCount() {
+        return articleCount;
+    }
+
+    public BigDecimal getAvgToneScore() {
+        return avgToneScore;
+    }
+
     public BigDecimal getNewsVolumeScore() {
         return newsVolumeScore;
     }
@@ -88,19 +108,19 @@ public class SectorScore extends BaseEntity {
         return newsToneScore;
     }
 
-    public BigDecimal getPriceMomentumScore() {
-        return priceMomentumScore;
-    }
-
-    public BigDecimal getVolumeSpikeScore() {
-        return volumeSpikeScore;
-    }
-
-    public BigDecimal getBreadthScore() {
-        return breadthScore;
+    public BigDecimal getKeywordStrengthScore() {
+        return keywordStrengthScore;
     }
 
     public BigDecimal getTotalSectorScore() {
         return totalSectorScore;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public LocalDateTime getAnalyzedAt() {
+        return analyzedAt;
     }
 }
