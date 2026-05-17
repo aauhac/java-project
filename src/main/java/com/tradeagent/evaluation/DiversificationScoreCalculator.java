@@ -12,10 +12,6 @@ public class DiversificationScoreCalculator extends AbstractScoreCalculator<Dive
 
     @Override
     public BigDecimal calculate(DiversificationScoreInput input) {
-        if (input == null || input.positions() == null || input.positions().isEmpty()) {
-            return neutralScore();
-        }
-
         BigDecimal totalAmount = input.positions().stream()
                 .map(PortfolioPosition::getTotalBuyAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);

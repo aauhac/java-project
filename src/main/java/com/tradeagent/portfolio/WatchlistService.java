@@ -30,16 +30,15 @@ public class WatchlistService {
 
     @Transactional
     public WatchlistDto addWatchlist(Long userId, String symbol, String sectorCode) {
-        long resolvedUserId = validateUserId(userId);
         String resolvedSymbol = normalizeSymbol(symbol);
         String resolvedSectorCode = normalizeSectorCode(sectorCode);
 
-        WatchlistItem item = watchlistRepository.findByUserIdAndSymbol(resolvedUserId, resolvedSymbol)
+        WatchlistItem item = watchlistRepository.findByUserIdAndSymbol(userId, resolvedSymbol)
                 .map(existing -> {
                     existing.setSectorCode(resolvedSectorCode);
                     return watchlistRepository.save(existing);
                 })
-                .orElseGet(() -> watchlistRepository.save(new WatchlistItem(resolvedUserId, resolvedSymbol, resolvedSectorCode)));
+                .orElseGet(() -> watchlistRepository.save(new WatchlistItem(userId, resolvedSymbol, resolvedSectorCode)));
 
         LatestQuote latestQuote = marketDataService.getLatestQuote(resolvedSymbol);
         return portfolioMapper.toWatchlistDto(item, latestQuote);
@@ -47,27 +46,18 @@ public class WatchlistService {
 
     @Transactional
     public void removeWatchlist(Long userId, String symbol) {
-        long resolvedUserId = validateUserId(userId);
         String resolvedSymbol = normalizeSymbol(symbol);
-        if (!watchlistRepository.existsByUserIdAndSymbol(resolvedUserId, resolvedSymbol)) {
+        if (!watchlistRepository.existsByUserIdAndSymbol(userId, resolvedSymbol)) {
             throw new NotFoundException(ErrorCode.RESOURCE_NOT_FOUND, "watchlist item not found for symbol " + resolvedSymbol);
         }
-        watchlistRepository.deleteByUserIdAndSymbol(resolvedUserId, resolvedSymbol);
+        watchlistRepository.deleteByUserIdAndSymbol(userId, resolvedSymbol);
     }
 
     public List<WatchlistDto> getWatchlist(Long userId) {
-        long resolvedUserId = validateUserId(userId);
-        return watchlistRepository.findByUserId(resolvedUserId).stream()
+        return watchlistRepository.findByUserId(userId).stream()
                 .sorted(Comparator.comparing(WatchlistItem::getSymbol))
                 .map(item -> portfolioMapper.toWatchlistDto(item, marketDataService.getLatestQuote(item.getSymbol())))
                 .toList();
-    }
-
-    private long validateUserId(Long userId) {
-        if (userId == null || userId <= 0) {
-            throw new ValidationException(ErrorCode.INVALID_INPUT, "userId must be a positive number");
-        }
-        return userId;
     }
 
     private String normalizeSymbol(String symbol) {

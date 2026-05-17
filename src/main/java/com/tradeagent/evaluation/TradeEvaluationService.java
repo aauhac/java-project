@@ -69,18 +69,16 @@ public class TradeEvaluationService {
 
     @Transactional
     public TradeEvaluationDto evaluateTrade(Long tradeHistoryId) {
-        long resolvedTradeHistoryId = validateTradeId(tradeHistoryId);
-        TradeHistory tradeHistory = tradeHistoryRepository.findById(resolvedTradeHistoryId)
+        TradeHistory tradeHistory = tradeHistoryRepository.findById(tradeHistoryId)
                 .orElseThrow(() -> new NotFoundException(ErrorCode.TRADE_NOT_FOUND,
-                        "trade history not found for id " + resolvedTradeHistoryId));
+                        "trade history not found for id " + tradeHistoryId));
 
         return evaluateTradeInternal(tradeHistory);
     }
 
     @Transactional
     public List<TradeEvaluationDto> evaluateAllTrades(Long userId) {
-        long resolvedUserId = validateUserId(userId);
-        return tradeHistoryRepository.findByUserId(resolvedUserId).stream()
+        return tradeHistoryRepository.findByUserId(userId).stream()
                 .sorted(Comparator.comparing(TradeHistory::getTradedAt))
                 .map(this::evaluateTradeInternal)
                 .toList();
@@ -327,20 +325,6 @@ public class TradeEvaluationService {
         }
 
         return new TradePairContext(buyTrade, sellTrade);
-    }
-
-    private long validateTradeId(Long tradeHistoryId) {
-        if (tradeHistoryId == null || tradeHistoryId <= 0) {
-            throw new ValidationException(ErrorCode.INVALID_INPUT, "tradeHistoryId must be a positive number");
-        }
-        return tradeHistoryId;
-    }
-
-    private long validateUserId(Long userId) {
-        if (userId == null || userId <= 0) {
-            throw new ValidationException(ErrorCode.INVALID_INPUT, "userId must be a positive number");
-        }
-        return userId;
     }
 
     private BigDecimal average(List<BigDecimal> scores) {

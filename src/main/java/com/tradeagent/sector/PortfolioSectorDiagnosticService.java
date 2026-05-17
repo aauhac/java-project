@@ -72,8 +72,7 @@ public class PortfolioSectorDiagnosticService {
     }
 
     public List<SectorExposureDto> getSectorExposureBreakdown(Long userId) {
-        long resolvedUserId = validateUserId(userId);
-        List<PortfolioPosition> positions = portfolioRepository.findByUserId(resolvedUserId);
+        List<PortfolioPosition> positions = portfolioRepository.findByUserId(userId);
         if (positions.isEmpty()) {
             return List.of();
         }
@@ -121,10 +120,4 @@ public class PortfolioSectorDiagnosticService {
                 .toList();
     }
 
-    private long validateUserId(Long userId) {
-        if (userId == null || userId <= 0) {
-            throw new ValidationException(ErrorCode.INVALID_INPUT, "userId must be a positive number");
-        }
-        return userId;
-    }
 }

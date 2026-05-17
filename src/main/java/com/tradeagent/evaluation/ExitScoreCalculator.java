@@ -11,10 +11,6 @@ public class ExitScoreCalculator extends AbstractScoreCalculator<ExitScoreInput>
 
     @Override
     public BigDecimal calculate(ExitScoreInput input) {
-        if (input == null || input.tradeHistory() == null || input.barsAroundExit() == null || input.barsAroundExit().isEmpty()) {
-            return neutralScore();
-        }
-
         BigDecimal minPrice = input.barsAroundExit().stream()
                 .map(PriceBar::getLowPrice)
                 .min(Comparator.naturalOrder())

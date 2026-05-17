@@ -45,16 +45,14 @@ public class PortfolioService {
     }
 
     public List<PositionDto> getPositions(Long userId) {
-        long resolvedUserId = validateUserId(userId);
-        return portfolioRepository.findByUserId(resolvedUserId).stream()
+        return portfolioRepository.findByUserId(userId).stream()
                 .sorted(Comparator.comparing(PortfolioPosition::getSymbol))
                 .map(position -> portfolioMapper.toPositionDto(position, marketDataService.getLatestQuote(position.getSymbol())))
                 .toList();
     }
 
     public PortfolioSummaryDto getSummary(Long userId) {
-        long resolvedUserId = validateUserId(userId);
-        List<PortfolioPosition> positions = portfolioRepository.findByUserId(resolvedUserId);
+        List<PortfolioPosition> positions = portfolioRepository.findByUserId(userId);
         BigDecimal totalBuyAmount = positions.stream()
                 .map(PortfolioPosition::getTotalBuyAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -66,8 +64,7 @@ public class PortfolioService {
     }
 
     public List<SectorAllocationDto> getSectorAllocation(Long userId) {
-        long resolvedUserId = validateUserId(userId);
-        List<PortfolioPosition> positions = portfolioRepository.findByUserId(resolvedUserId);
+        List<PortfolioPosition> positions = portfolioRepository.findByUserId(userId);
         Map<String, BigDecimal> marketValueBySector = new LinkedHashMap<>();
 
         for (PortfolioPosition position : positions) {
@@ -84,12 +81,5 @@ public class PortfolioService {
                 .sorted(Map.Entry.<String, BigDecimal>comparingByValue().reversed())
                 .map(entry -> portfolioMapper.toSectorAllocationDto(entry.getKey(), entry.getValue(), totalMarketValue))
                 .toList();
-    }
-
-    private long validateUserId(Long userId) {
-        if (userId == null || userId <= 0) {
-            throw new ValidationException(ErrorCode.INVALID_INPUT, "userId must be a positive number");
-        }
-        return userId;
     }
 }

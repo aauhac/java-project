@@ -11,10 +11,6 @@ public class EntryScoreCalculator extends AbstractScoreCalculator<EntryScoreInpu
 
     @Override
     public BigDecimal calculate(EntryScoreInput input) {
-        if (input == null || input.tradeHistory() == null || input.barsAfterEntry() == null || input.barsAfterEntry().isEmpty()) {
-            return neutralScore();
-        }
-
         BigDecimal minPrice = input.barsAfterEntry().stream()
                 .map(PriceBar::getLowPrice)
                 .min(Comparator.naturalOrder())

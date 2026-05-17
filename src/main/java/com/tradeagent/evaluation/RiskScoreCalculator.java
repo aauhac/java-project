@@ -12,10 +12,6 @@ public class RiskScoreCalculator extends AbstractScoreCalculator<RiskScoreInput>
 
     @Override
     public BigDecimal calculate(RiskScoreInput input) {
-        if (input == null || input.buyTrade() == null || input.holdingBars() == null || input.holdingBars().isEmpty()) {
-            return neutralScore();
-        }
-
         BigDecimal buyPrice = input.buyTrade().getPrice();
         if (buyPrice == null || buyPrice.compareTo(BigDecimal.ZERO) <= 0) {
             return neutralScore();

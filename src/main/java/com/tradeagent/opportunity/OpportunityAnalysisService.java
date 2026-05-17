@@ -28,7 +28,6 @@ public class OpportunityAnalysisService {
     }
 
     public List<OpportunityDto> getTopMissedOpportunities(Long userId) {
-        validateUserId(userId);
         return missedOpportunityDetector.detect(userId).stream()
                 .sorted(Comparator.comparing(MissedOpportunity::getExpectedReturn).reversed())
                 .limit(10)
@@ -45,7 +44,6 @@ public class OpportunityAnalysisService {
     }
 
     public List<OpportunityDto> getTopAvoidedLosses(Long userId) {
-        validateUserId(userId);
         return avoidedLossDetector.detect(userId).stream()
                 .sorted(Comparator.comparing(AvoidedLoss::getAvoidedLossRate).reversed())
                 .limit(10)
@@ -62,7 +60,6 @@ public class OpportunityAnalysisService {
     }
 
     public List<BetterTimingDto> getTradePatterns(Long userId) {
-        validateUserId(userId);
         return java.util.stream.Stream.concat(
                         tradePatternAnalyzer.findSoldTooEarly(userId).stream(),
                         tradePatternAnalyzer.findHeldTooLong(userId).stream())
@@ -82,7 +79,6 @@ public class OpportunityAnalysisService {
     }
 
     public OpportunitySummaryDto getOpportunitySummary(Long userId) {
-        validateUserId(userId);
         int missedCount = missedOpportunityDetector.detect(userId).size();
         int avoidedCount = avoidedLossDetector.detect(userId).size();
         int soldTooEarlyCount = tradePatternAnalyzer.findSoldTooEarly(userId).size();
@@ -94,11 +90,5 @@ public class OpportunityAnalysisService {
                 soldTooEarlyCount,
                 heldTooLongCount
         );
-    }
-
-    private void validateUserId(Long userId) {
-        if (userId == null || userId <= 0) {
-            throw new ValidationException(ErrorCode.INVALID_INPUT, "userId must be a positive number");
-        }
     }
 }
