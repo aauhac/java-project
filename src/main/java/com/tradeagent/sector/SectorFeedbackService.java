@@ -1,5 +1,6 @@
 package com.tradeagent.sector;
 
+import com.tradeagent.sector.SectorApiModels.PortfolioSectorDiagnosticDto;
 import org.springframework.stereotype.Service;
 
 @Service

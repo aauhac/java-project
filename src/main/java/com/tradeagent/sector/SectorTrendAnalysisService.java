@@ -6,6 +6,7 @@ import com.tradeagent.common.ExternalApiException;
 import com.tradeagent.common.NotFoundException;
 import com.tradeagent.common.ValidationException;
 import com.tradeagent.config.GdeltProperties;
+import com.tradeagent.sector.SectorApiModels.SectorTrendDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

@@ -28,10 +28,10 @@ public class SectorMaster extends BaseEntity {
     @Column(nullable = false, length = 500)
     private String description;
 
-    @Column(name = "profile_text", nullable = false, length = 2000)
+    @Column(name = "profile_text", length = 2000)
     private String profileText;
 
-    @Column(name = "embedding_vector", nullable = false, length = 4000)
+    @Column(name = "embedding_vector", length = 4000)
     private String embeddingVector;
 
     protected SectorMaster() {
@@ -58,15 +58,15 @@ public class SectorMaster extends BaseEntity {
     }
 
     public String getProfileText() {
-        return profileText;
+        return profileText == null ? "" : profileText;
     }
 
     public String getEmbeddingVector() {
-        return embeddingVector;
+        return embeddingVector == null ? "" : embeddingVector;
     }
 
     public void updateEmbedding(String profileText, String embeddingVector) {
-        this.profileText = profileText;
-        this.embeddingVector = embeddingVector;
+        this.profileText = profileText == null ? "" : profileText;
+        this.embeddingVector = embeddingVector == null ? "" : embeddingVector;
     }
 }

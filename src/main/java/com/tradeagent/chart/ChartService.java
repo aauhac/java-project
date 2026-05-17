@@ -1,5 +1,7 @@
 package com.tradeagent.chart;
 
+import com.tradeagent.chart.ChartModels.ChartBar;
+import com.tradeagent.chart.ChartModels.ChartResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;

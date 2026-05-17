@@ -1,6 +1,11 @@
 package com.tradeagent.sector;
 
 import com.tradeagent.common.ApiResponse;
+import com.tradeagent.sector.SectorApiModels.NewsEventDto;
+import com.tradeagent.sector.SectorApiModels.PortfolioSectorDiagnosticDto;
+import com.tradeagent.sector.SectorApiModels.PortfolioTrendMatchDto;
+import com.tradeagent.sector.SectorApiModels.SectorScoreDto;
+import com.tradeagent.sector.SectorApiModels.SectorTrendDto;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;

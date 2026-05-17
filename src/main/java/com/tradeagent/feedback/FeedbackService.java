@@ -2,12 +2,12 @@ package com.tradeagent.feedback;
 
 import com.tradeagent.common.ErrorCode;
 import com.tradeagent.common.ValidationException;
-import com.tradeagent.evaluation.DecisionSummaryDto;
+import com.tradeagent.evaluation.EvaluationModels.DecisionSummaryDto;
 import com.tradeagent.evaluation.TradeEvaluationService;
 import com.tradeagent.opportunity.OpportunityAnalysisService;
-import com.tradeagent.opportunity.OpportunitySummaryDto;
-import com.tradeagent.sector.PortfolioSectorDiagnosticDto;
+import com.tradeagent.opportunity.OpportunityApiModels.OpportunitySummaryDto;
 import com.tradeagent.sector.PortfolioSectorDiagnosticService;
+import com.tradeagent.sector.SectorApiModels.PortfolioSectorDiagnosticDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

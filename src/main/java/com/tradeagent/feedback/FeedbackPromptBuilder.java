@@ -1,8 +1,8 @@
 package com.tradeagent.feedback;
 
-import com.tradeagent.evaluation.DecisionSummaryDto;
-import com.tradeagent.opportunity.OpportunitySummaryDto;
-import com.tradeagent.sector.PortfolioSectorDiagnosticDto;
+import com.tradeagent.evaluation.EvaluationModels.DecisionSummaryDto;
+import com.tradeagent.opportunity.OpportunityApiModels.OpportunitySummaryDto;
+import com.tradeagent.sector.SectorApiModels.PortfolioSectorDiagnosticDto;
 import org.springframework.stereotype.Component;
 
 import java.util.Locale;

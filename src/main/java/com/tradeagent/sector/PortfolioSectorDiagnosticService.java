@@ -2,6 +2,11 @@ package com.tradeagent.sector;
 
 import com.tradeagent.portfolio.PortfolioPosition;
 import com.tradeagent.portfolio.PortfolioRepository;
+import com.tradeagent.sector.SectorApiModels.PortfolioSectorDiagnosticDto;
+import com.tradeagent.sector.SectorApiModels.PortfolioTrendMatchDto;
+import com.tradeagent.sector.SectorApiModels.SectorExposureDto;
+import com.tradeagent.sector.SectorApiModels.SectorScoreDto;
+import com.tradeagent.sector.SectorApiModels.SectorTrendDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

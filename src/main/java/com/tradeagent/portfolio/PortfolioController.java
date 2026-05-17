@@ -1,6 +1,10 @@
 package com.tradeagent.portfolio;
 
 import com.tradeagent.common.ApiResponse;
+import com.tradeagent.portfolio.PortfolioApiModels.PortfolioSummaryDto;
+import com.tradeagent.portfolio.PortfolioApiModels.PositionDto;
+import com.tradeagent.portfolio.PortfolioApiModels.SectorAllocationDto;
+import com.tradeagent.portfolio.PortfolioApiModels.TradeRequestDto;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;

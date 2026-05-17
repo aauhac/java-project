@@ -4,6 +4,10 @@ import com.tradeagent.common.ErrorCode;
 import com.tradeagent.common.ValidationException;
 import com.tradeagent.market.LatestQuote;
 import com.tradeagent.market.MarketDataService;
+import com.tradeagent.portfolio.PortfolioApiModels.PortfolioSummaryDto;
+import com.tradeagent.portfolio.PortfolioApiModels.PositionDto;
+import com.tradeagent.portfolio.PortfolioApiModels.SectorAllocationDto;
+import com.tradeagent.portfolio.PortfolioApiModels.TradeRequestDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

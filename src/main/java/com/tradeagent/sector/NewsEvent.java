@@ -36,10 +36,10 @@ public class NewsEvent extends BaseEntity {
     @Column(name = "tone_score", nullable = false, precision = 6, scale = 2)
     private BigDecimal toneScore;
 
-    @Column(name = "similarity_score", nullable = false, precision = 8, scale = 4)
+    @Column(name = "similarity_score", precision = 8, scale = 4)
     private BigDecimal similarityScore;
 
-    @Column(name = "embedding_vector", nullable = false, length = 4000)
+    @Column(name = "embedding_vector", length = 4000)
     private String embeddingVector;
 
     @Column(name = "published_at", nullable = false)
@@ -91,11 +91,11 @@ public class NewsEvent extends BaseEntity {
     }
 
     public BigDecimal getSimilarityScore() {
-        return similarityScore;
+        return similarityScore == null ? BigDecimal.ZERO.setScale(4) : similarityScore;
     }
 
     public String getEmbeddingVector() {
-        return embeddingVector;
+        return embeddingVector == null ? "" : embeddingVector;
     }
 
     public LocalDateTime getPublishedAt() {

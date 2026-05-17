@@ -5,6 +5,7 @@ import com.tradeagent.common.TradeType;
 import com.tradeagent.common.ValidationException;
 import com.tradeagent.market.PriceBar;
 import com.tradeagent.market.PriceBarRepository;
+import com.tradeagent.opportunity.OpportunityApiModels.BetterTimingDto;
 import com.tradeagent.portfolio.TradeHistory;
 import com.tradeagent.portfolio.TradeHistoryRepository;
 import org.springframework.stereotype.Component;

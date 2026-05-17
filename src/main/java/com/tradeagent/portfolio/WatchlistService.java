@@ -5,6 +5,7 @@ import com.tradeagent.common.NotFoundException;
 import com.tradeagent.common.ValidationException;
 import com.tradeagent.market.LatestQuote;
 import com.tradeagent.market.MarketDataService;
+import com.tradeagent.portfolio.PortfolioApiModels.WatchlistDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;

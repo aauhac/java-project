@@ -1,6 +1,8 @@
 package com.tradeagent.evaluation;
 
 import com.tradeagent.common.ApiResponse;
+import com.tradeagent.evaluation.EvaluationModels.DecisionSummaryDto;
+import com.tradeagent.evaluation.EvaluationModels.TradeEvaluationDto;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;

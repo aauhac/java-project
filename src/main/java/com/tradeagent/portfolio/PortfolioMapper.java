@@ -1,6 +1,10 @@
 package com.tradeagent.portfolio;
 
 import com.tradeagent.market.LatestQuote;
+import com.tradeagent.portfolio.PortfolioApiModels.PortfolioSummaryDto;
+import com.tradeagent.portfolio.PortfolioApiModels.PositionDto;
+import com.tradeagent.portfolio.PortfolioApiModels.SectorAllocationDto;
+import com.tradeagent.portfolio.PortfolioApiModels.WatchlistDto;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;

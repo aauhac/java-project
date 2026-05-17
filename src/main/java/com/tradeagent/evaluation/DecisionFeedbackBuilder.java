@@ -1,5 +1,6 @@
 package com.tradeagent.evaluation;
 
+import com.tradeagent.evaluation.EvaluationModels.ScoreDetailDto;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;

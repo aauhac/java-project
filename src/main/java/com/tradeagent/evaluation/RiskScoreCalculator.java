@@ -1,5 +1,6 @@
 package com.tradeagent.evaluation;
 
+import com.tradeagent.evaluation.EvaluationModels.RiskScoreInput;
 import com.tradeagent.market.PriceBar;
 import org.springframework.stereotype.Component;
 

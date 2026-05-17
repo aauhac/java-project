@@ -1,6 +1,9 @@
 package com.tradeagent.opportunity;
 
 import com.tradeagent.common.ApiResponse;
+import com.tradeagent.opportunity.OpportunityApiModels.BetterTimingDto;
+import com.tradeagent.opportunity.OpportunityApiModels.OpportunityDto;
+import com.tradeagent.opportunity.OpportunityApiModels.OpportunitySummaryDto;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;

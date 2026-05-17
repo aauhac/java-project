@@ -5,6 +5,7 @@ import com.tradeagent.common.ErrorCode;
 import com.tradeagent.common.NotFoundException;
 import com.tradeagent.common.TradeType;
 import com.tradeagent.common.ValidationException;
+import com.tradeagent.portfolio.PortfolioApiModels.TradeRequestDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;

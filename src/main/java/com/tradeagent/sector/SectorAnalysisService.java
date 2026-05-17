@@ -4,6 +4,8 @@ import com.tradeagent.common.DateTimeUtil;
 import com.tradeagent.common.ErrorCode;
 import com.tradeagent.common.NotFoundException;
 import com.tradeagent.common.ValidationException;
+import com.tradeagent.sector.SectorApiModels.NewsEventDto;
+import com.tradeagent.sector.SectorApiModels.SectorScoreDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

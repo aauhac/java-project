@@ -1,5 +1,6 @@
 package com.tradeagent.evaluation;
 
+import com.tradeagent.evaluation.EvaluationModels.DiversificationScoreInput;
 import com.tradeagent.portfolio.PortfolioPosition;
 import org.springframework.stereotype.Component;
 
