@@ -1,13 +1,15 @@
 package com.tradeagent.sector;
 
+import com.tradeagent.common.ErrorCode;
 import com.tradeagent.common.ExternalApiException;
 import com.tradeagent.common.ValidationException;
 import com.tradeagent.config.GdeltProperties;
-import com.tradeagent.common.ErrorCode;
+import com.tradeagent.config.VllmProperties;
+import com.tradeagent.feedback.VllmClient;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -32,9 +34,16 @@ public class GdeltClient {
 
     private final WebClient webClient;
     private final GdeltProperties gdeltProperties;
+    private final VllmClient vllmClient;
+    private final VllmProperties vllmProperties;
 
-    public GdeltClient(WebClient.Builder webClientBuilder, GdeltProperties gdeltProperties) {
+    public GdeltClient(WebClient.Builder webClientBuilder,
+                       GdeltProperties gdeltProperties,
+                       VllmClient vllmClient,
+                       VllmProperties vllmProperties) {
         this.gdeltProperties = gdeltProperties;
+        this.vllmClient = vllmClient;
+        this.vllmProperties = vllmProperties;
         this.webClient = webClientBuilder.baseUrl(normalizeBaseUrl(gdeltProperties.getBaseUrl())).build();
     }
 
@@ -115,6 +124,36 @@ public class GdeltClient {
     }
 
     private BigDecimal estimateTone(String title) {
+        BigDecimal vllmTone = estimateToneWithVllm(title);
+        if (vllmTone != null) {
+            return vllmTone;
+        }
+        return estimateToneWithKeywords(title);
+    }
+
+    private BigDecimal estimateToneWithVllm(String title) {
+        if (!vllmProperties.isEnabled() || !StringUtils.hasText(title)) {
+            return null;
+        }
+        String response = vllmClient.generateText("""
+                Return only one number between -10 and 10 for the sentiment of this finance news headline.
+                Headline: %s
+                """.formatted(title));
+        String trimmed = response == null ? "" : response.trim();
+        if (!trimmed.matches("^-?\\d+(\\.\\d+)?$")) {
+            return null;
+        }
+        BigDecimal value = new BigDecimal(trimmed);
+        if (value.compareTo(BigDecimal.TEN) > 0) {
+            value = BigDecimal.TEN;
+        }
+        if (value.compareTo(BigDecimal.TEN.negate()) < 0) {
+            value = BigDecimal.TEN.negate();
+        }
+        return value.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal estimateToneWithKeywords(String title) {
         if (!StringUtils.hasText(title)) {
             return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         }

@@ -2,9 +2,9 @@ package com.tradeagent.sector;
 
 import com.tradeagent.common.DateTimeUtil;
 import com.tradeagent.common.ErrorCode;
+import com.tradeagent.common.ExternalApiException;
 import com.tradeagent.common.NotFoundException;
 import com.tradeagent.common.ValidationException;
-import com.tradeagent.common.ExternalApiException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,14 +35,14 @@ public class SectorTrendAnalysisService {
     );
 
     private final SectorMasterRepository sectorMasterRepository;
-    private final SectorScoreRepository sectorScoreRepository;
+    private final SectorNewsScoreRepository sectorNewsScoreRepository;
     private final GdeltClient gdeltClient;
 
     public SectorTrendAnalysisService(SectorMasterRepository sectorMasterRepository,
-                                      SectorScoreRepository sectorScoreRepository,
+                                      SectorNewsScoreRepository sectorNewsScoreRepository,
                                       GdeltClient gdeltClient) {
         this.sectorMasterRepository = sectorMasterRepository;
-        this.sectorScoreRepository = sectorScoreRepository;
+        this.sectorNewsScoreRepository = sectorNewsScoreRepository;
         this.gdeltClient = gdeltClient;
     }
 
@@ -78,7 +78,7 @@ public class SectorTrendAnalysisService {
                     ? draft.lockedStatus()
                     : rankedStatus.getOrDefault(draft.sectorCode(), "NEUTRAL");
 
-            SectorScore saved = upsert(
+            SectorNewsScore saved = upsert(
                     draft.sectorCode(),
                     resolvedDate,
                     draft.articleCount(),
@@ -102,7 +102,7 @@ public class SectorTrendAnalysisService {
     public List<SectorTrendDto> getTrendScores(LocalDate date) {
         LocalDate resolvedDate = resolveDate(date);
         List<SectorMaster> masters = sectorMasterRepository.findAllByOrderBySectorCodeAsc();
-        List<SectorScore> scores = sectorScoreRepository.findByScoreDateOrderByTotalSectorScoreDesc(resolvedDate);
+        List<SectorNewsScore> scores = sectorNewsScoreRepository.findByScoreDateOrderByTotalSectorScoreDesc(resolvedDate);
         if (scores.size() < masters.size()) {
             return analyze(resolvedDate);
         }
@@ -118,7 +118,7 @@ public class SectorTrendAnalysisService {
     public List<SectorTrendDto> getLatestTrendScores() {
         List<SectorMaster> masters = sectorMasterRepository.findAllByOrderBySectorCodeAsc();
         List<SectorTrendDto> latest = masters.stream()
-                .map(master -> sectorScoreRepository.findTopBySectorCodeOrderByScoreDateDesc(master.getSectorCode())
+                .map(master -> sectorNewsScoreRepository.findTopBySectorCodeOrderByScoreDateDesc(master.getSectorCode())
                         .map(score -> toDto(master, score))
                         .orElse(null))
                 .filter(item -> item != null)
@@ -134,7 +134,7 @@ public class SectorTrendAnalysisService {
                 .orElseThrow(() -> new NotFoundException(ErrorCode.SECTOR_NOT_FOUND,
                         "sector not found for code " + resolvedSectorCode));
 
-        return sectorScoreRepository.findTopBySectorCodeOrderByScoreDateDesc(resolvedSectorCode)
+        return sectorNewsScoreRepository.findTopBySectorCodeOrderByScoreDateDesc(resolvedSectorCode)
                 .map(score -> toDto(master, score))
                 .orElseGet(() -> analyzeToday().stream()
                         .filter(item -> item.sectorCode().equals(resolvedSectorCode))
@@ -155,7 +155,7 @@ public class SectorTrendAnalysisService {
                 .orElseThrow(() -> new NotFoundException(ErrorCode.SECTOR_NOT_FOUND,
                         "sector not found for code " + resolvedSectorCode));
 
-        return sectorScoreRepository.findBySectorCodeAndScoreDateBetweenOrderByScoreDateAsc(
+        return sectorNewsScoreRepository.findBySectorCodeAndScoreDateBetweenOrderByScoreDateAsc(
                         resolvedSectorCode,
                         resolvedFrom,
                         resolvedTo
@@ -167,15 +167,15 @@ public class SectorTrendAnalysisService {
     private AnalysisDraft fetchDraft(SectorMaster master, LocalDate date) {
         try {
             List<NewsEvent> events = gdeltClient.fetchSectorNews(master.getSectorCode(), date);
-            return freshDraft(master.getSectorCode(), date, events);
+            return freshDraft(master.getSectorCode(), events);
         } catch (ExternalApiException ex) {
-            return sectorScoreRepository.findBySectorCodeAndScoreDate(master.getSectorCode(), date)
+            return sectorNewsScoreRepository.findBySectorCodeAndScoreDate(master.getSectorCode(), date)
                     .map(score -> AnalysisDraft.fromExisting(master.getSectorCode(), score))
                     .orElseGet(() -> AnalysisDraft.zero(master.getSectorCode(), LocalDateTime.now()));
         }
     }
 
-    private AnalysisDraft freshDraft(String sectorCode, LocalDate date, List<NewsEvent> events) {
+    private AnalysisDraft freshDraft(String sectorCode, List<NewsEvent> events) {
         int articleCount = events.size();
         BigDecimal avgTone = averageTone(events);
         BigDecimal keywordStrength = calculateKeywordStrengthScore(sectorCode, events);
@@ -236,12 +236,12 @@ public class SectorTrendAnalysisService {
         return statuses;
     }
 
-    private SectorScore upsert(String sectorCode, LocalDate scoreDate, Integer articleCount, BigDecimal avgToneScore,
-                               BigDecimal newsVolumeScore, BigDecimal newsToneScore, BigDecimal keywordStrengthScore,
-                               BigDecimal totalSectorScore, String status, LocalDateTime analyzedAt) {
-        return sectorScoreRepository.findBySectorCodeAndScoreDate(sectorCode, scoreDate)
+    private SectorNewsScore upsert(String sectorCode, LocalDate scoreDate, Integer articleCount, BigDecimal avgToneScore,
+                                   BigDecimal newsVolumeScore, BigDecimal newsToneScore, BigDecimal keywordStrengthScore,
+                                   BigDecimal totalSectorScore, String status, LocalDateTime analyzedAt) {
+        return sectorNewsScoreRepository.findBySectorCodeAndScoreDate(sectorCode, scoreDate)
                 .map(existing -> {
-                    existing.updateTrend(
+                    existing.update(
                             articleCount,
                             avgToneScore,
                             newsVolumeScore,
@@ -251,9 +251,9 @@ public class SectorTrendAnalysisService {
                             status,
                             analyzedAt
                     );
-                    return sectorScoreRepository.save(existing);
+                    return sectorNewsScoreRepository.save(existing);
                 })
-                .orElseGet(() -> sectorScoreRepository.save(new SectorScore(
+                .orElseGet(() -> sectorNewsScoreRepository.save(new SectorNewsScore(
                         sectorCode,
                         scoreDate,
                         articleCount,
@@ -267,7 +267,7 @@ public class SectorTrendAnalysisService {
                 )));
     }
 
-    private SectorTrendDto toDto(SectorMaster master, SectorScore score) {
+    private SectorTrendDto toDto(SectorMaster master, SectorNewsScore score) {
         return new SectorTrendDto(
                 master.getSectorCode(),
                 master.getSectorName(),
@@ -368,12 +368,12 @@ public class SectorTrendAnalysisService {
         private final String lockedStatus;
         private final LocalDateTime analyzedAt;
         private final boolean fresh;
-        private final SectorScore existingScore;
+        private final SectorNewsScore existingScore;
 
         private AnalysisDraft(String sectorCode, Integer articleCount, BigDecimal avgToneScore,
                               BigDecimal newsVolumeScore, BigDecimal newsToneScore, BigDecimal keywordStrengthScore,
                               BigDecimal totalSectorScore, String lockedStatus, LocalDateTime analyzedAt,
-                              boolean fresh, SectorScore existingScore) {
+                              boolean fresh, SectorNewsScore existingScore) {
             this.sectorCode = sectorCode;
             this.articleCount = articleCount;
             this.avgToneScore = avgToneScore;
@@ -387,7 +387,7 @@ public class SectorTrendAnalysisService {
             this.existingScore = existingScore;
         }
 
-        private static AnalysisDraft fromExisting(String sectorCode, SectorScore score) {
+        private static AnalysisDraft fromExisting(String sectorCode, SectorNewsScore score) {
             return new AnalysisDraft(
                     sectorCode,
                     score.getArticleCount(),
@@ -480,7 +480,7 @@ public class SectorTrendAnalysisService {
             return fresh;
         }
 
-        private SectorScore existingScore() {
+        private SectorNewsScore existingScore() {
             return existingScore;
         }
     }

@@ -1,7 +1,5 @@
 package com.tradeagent.sector;
 
-import com.tradeagent.common.ErrorCode;
-import com.tradeagent.common.ValidationException;
 import com.tradeagent.portfolio.PortfolioPosition;
 import com.tradeagent.portfolio.PortfolioRepository;
 import org.springframework.stereotype.Service;
@@ -22,22 +20,24 @@ public class PortfolioSectorDiagnosticService {
 
     private final PortfolioRepository portfolioRepository;
     private final SectorMasterRepository sectorMasterRepository;
+    private final SectorAnalysisService sectorAnalysisService;
     private final SectorTrendAnalysisService sectorTrendAnalysisService;
     private final SectorFeedbackService sectorFeedbackService;
 
     public PortfolioSectorDiagnosticService(PortfolioRepository portfolioRepository,
                                             SectorMasterRepository sectorMasterRepository,
+                                            SectorAnalysisService sectorAnalysisService,
                                             SectorTrendAnalysisService sectorTrendAnalysisService,
                                             SectorFeedbackService sectorFeedbackService) {
         this.portfolioRepository = portfolioRepository;
         this.sectorMasterRepository = sectorMasterRepository;
+        this.sectorAnalysisService = sectorAnalysisService;
         this.sectorTrendAnalysisService = sectorTrendAnalysisService;
         this.sectorFeedbackService = sectorFeedbackService;
     }
 
     public PortfolioSectorDiagnosticDto diagnose(Long userId) {
-        List<SectorTrendDto> latestScores = sectorTrendAnalysisService.getLatestTrendScores();
-        List<SectorExposureDto> exposures = getSectorExposureBreakdown(userId, latestScores);
+        List<SectorExposureDto> exposures = getMixedExposureBreakdown(userId, sectorAnalysisService.getLatestSectorScores());
         BigDecimal strongExposure = sumExposureByStatus(exposures, "STRONG");
         BigDecimal weakExposure = sumExposureByStatus(exposures, "WEAK");
         PortfolioSectorDiagnosticDto draft = new PortfolioSectorDiagnosticDto(
@@ -55,8 +55,7 @@ public class PortfolioSectorDiagnosticService {
     }
 
     public PortfolioTrendMatchDto calculateTrendMatch(Long userId, LocalDate date) {
-        List<SectorTrendDto> trendScores = sectorTrendAnalysisService.getTrendScores(date);
-        List<SectorExposureDto> exposures = getSectorExposureBreakdown(userId, trendScores);
+        List<SectorExposureDto> exposures = getTrendExposureBreakdown(userId, sectorTrendAnalysisService.getTrendScores(date));
         BigDecimal strongExposure = sumExposureByStatus(exposures, "STRONG");
         BigDecimal weakExposure = sumExposureByStatus(exposures, "WEAK");
         BigDecimal trendMatchScore = exposures.stream()
@@ -76,17 +75,30 @@ public class PortfolioSectorDiagnosticService {
     }
 
     public List<SectorExposureDto> getSectorExposureBreakdown(Long userId) {
-        return getSectorExposureBreakdown(userId, sectorTrendAnalysisService.getLatestTrendScores());
+        return getMixedExposureBreakdown(userId, sectorAnalysisService.getLatestSectorScores());
     }
 
-    private List<SectorExposureDto> getSectorExposureBreakdown(Long userId, List<SectorTrendDto> trendScores) {
+    private List<SectorExposureDto> getMixedExposureBreakdown(Long userId, List<SectorScoreDto> scores) {
+        Map<String, SectorScoreDto> sectorScoreMap = scores.stream()
+                .collect(Collectors.toMap(SectorScoreDto::sectorCode, Function.identity()));
+        return buildExposureBreakdown(userId, sectorScoreMap, SectorScoreDto::totalSectorScore, SectorScoreDto::status);
+    }
+
+    private List<SectorExposureDto> getTrendExposureBreakdown(Long userId, List<SectorTrendDto> scores) {
+        Map<String, SectorTrendDto> sectorScoreMap = scores.stream()
+                .collect(Collectors.toMap(SectorTrendDto::sectorCode, Function.identity()));
+        return buildExposureBreakdown(userId, sectorScoreMap, SectorTrendDto::totalSectorScore, SectorTrendDto::status);
+    }
+
+    private <T> List<SectorExposureDto> buildExposureBreakdown(Long userId,
+                                                               Map<String, T> sectorScoreMap,
+                                                               Function<T, BigDecimal> scoreExtractor,
+                                                               Function<T, String> statusExtractor) {
         List<PortfolioPosition> positions = portfolioRepository.findByUserId(userId);
         if (positions.isEmpty()) {
             return List.of();
         }
 
-        Map<String, SectorTrendDto> sectorScoreMap = trendScores.stream()
-                .collect(Collectors.toMap(SectorTrendDto::sectorCode, Function.identity()));
         Map<String, String> sectorNameMap = sectorMasterRepository.findAllByOrderBySectorCodeAsc().stream()
                 .collect(Collectors.toMap(SectorMaster::getSectorCode, SectorMaster::getSectorName));
 
@@ -110,11 +122,11 @@ public class PortfolioSectorDiagnosticService {
                             .divide(totalExposure, 6, RoundingMode.HALF_UP)
                             .multiply(BigDecimal.valueOf(100))
                             .setScale(2, RoundingMode.HALF_UP);
-                    SectorTrendDto sectorScore = sectorScoreMap.get(entry.getKey());
+                    T sectorScore = sectorScoreMap.get(entry.getKey());
                     BigDecimal totalSectorScore = sectorScore != null
-                            ? sectorScore.totalSectorScore().setScale(2, RoundingMode.HALF_UP)
+                            ? scoreExtractor.apply(sectorScore).setScale(2, RoundingMode.HALF_UP)
                             : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-                    String status = sectorScore != null ? sectorScore.status() : "NEUTRAL";
+                    String status = sectorScore != null ? statusExtractor.apply(sectorScore) : "NEUTRAL";
                     return new SectorExposureDto(
                             entry.getKey(),
                             sectorNameMap.getOrDefault(entry.getKey(), entry.getKey()),

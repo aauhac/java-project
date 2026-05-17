@@ -28,12 +28,12 @@ public class SectorController {
     }
 
     @GetMapping("/scores")
-    public ApiResponse<List<SectorTrendDto>> getScores() {
+    public ApiResponse<List<SectorScoreDto>> getScores() {
         return ApiResponse.ok(sectorAnalysisService.getLatestSectorScores());
     }
 
     @GetMapping("/{sectorCode}/score")
-    public ApiResponse<SectorTrendDto> getSectorScore(@PathVariable String sectorCode) {
+    public ApiResponse<SectorScoreDto> getSectorScore(@PathVariable String sectorCode) {
         return ApiResponse.ok(sectorAnalysisService.getSectorScore(sectorCode));
     }
 
@@ -48,7 +48,7 @@ public class SectorController {
     }
 
     @PostMapping("/calculate")
-    public ApiResponse<List<SectorTrendDto>> calculate() {
+    public ApiResponse<List<SectorScoreDto>> calculate() {
         return ApiResponse.ok(sectorAnalysisService.calculateTodaySectorScores());
     }
 
