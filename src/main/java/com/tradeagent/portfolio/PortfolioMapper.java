@@ -4,6 +4,7 @@ import com.tradeagent.market.LatestQuote;
 import com.tradeagent.portfolio.PortfolioApiModels.PortfolioSummaryDto;
 import com.tradeagent.portfolio.PortfolioApiModels.PositionDto;
 import com.tradeagent.portfolio.PortfolioApiModels.SectorAllocationDto;
+import com.tradeagent.portfolio.PortfolioApiModels.TradeHistoryDto;
 import com.tradeagent.portfolio.PortfolioApiModels.WatchlistDto;
 import org.springframework.stereotype.Component;
 
@@ -18,9 +19,12 @@ public class PortfolioMapper {
             Map.entry("SEMI", "Semiconductor"),
             Map.entry("AI", "AI"),
             Map.entry("AI_INFRA", "AI Infrastructure"),
+            Map.entry("AIINF", "AI 인프라"),
             Map.entry("EV", "Electric Vehicle"),
             Map.entry("BIO", "Biotech"),
             Map.entry("CLOUD", "Cloud"),
+            Map.entry("CYBER", "Cybersecurity"),
+            Map.entry("FINPAY", "Fintech"),
             Map.entry("FIN", "Financial"),
             Map.entry("TECH", "Technology")
     );
@@ -75,6 +79,17 @@ public class PortfolioMapper {
                 item.getSectorCode(),
                 latestQuote.getLastPrice().setScale(4, RoundingMode.HALF_UP),
                 latestQuote.getChangeRate().setScale(2, RoundingMode.HALF_UP)
+        );
+    }
+
+    public TradeHistoryDto toTradeHistoryDto(TradeHistory tradeHistory) {
+        return new TradeHistoryDto(
+                tradeHistory.getSymbol(),
+                tradeHistory.getSectorCode(),
+                tradeHistory.getTradeType().name(),
+                tradeHistory.getPrice().setScale(4, RoundingMode.HALF_UP),
+                tradeHistory.getQuantity(),
+                tradeHistory.getTradedAt()
         );
     }
 

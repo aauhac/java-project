@@ -30,15 +30,21 @@ public class GdeltClient {
             "SEMI", "\"semiconductor\" OR chip OR foundry OR gpu OR NVDA OR AMD OR TSM OR NVIDIA",
             "AIINF", "\"AI infrastructure\" OR datacenter OR cloud OR compute OR NVDA OR MSFT OR AMZN OR GOOGL OR NVIDIA",
             "EV", "\"electric vehicle\" OR battery OR charging OR TSLA OR RIVN OR LI OR Tesla",
-            "BIO", "biotech OR biopharma OR pharma OR drug OR trial OR FDA OR MRNA OR AMGN OR GILD OR Moderna"
+            "BIO", "biotech OR biopharma OR pharma OR drug OR trial OR FDA OR MRNA OR AMGN OR GILD OR Moderna",
+            "CLOUD", "\"cloud software\" OR saas OR enterprise cloud OR microsoft azure OR oracle cloud OR salesforce OR serviceNow OR MSFT OR ORCL OR CRM OR NOW",
+            "CYBER", "cybersecurity OR cyberattack OR network security OR endpoint security OR CrowdStrike OR Palo Alto Networks OR Zscaler OR CRWD OR PANW OR ZS",
+            "FINPAY", "fintech OR digital payments OR payments OR card network OR Visa OR Mastercard OR PayPal OR Block OR V OR MA OR PYPL OR SQ"
     );
     private static final String BROAD_MARKET_QUERY =
             "\"semiconductor\" OR chip OR foundry OR gpu OR " +
             "\"AI infrastructure\" OR datacenter OR cloud OR compute OR \"artificial intelligence\" OR " +
             "\"electric vehicle\" OR battery OR charging OR " +
             "biotech OR biopharma OR pharma OR drug OR trial OR FDA OR " +
-            "NVDA OR AMD OR TSM OR NVIDIA OR MSFT OR AMZN OR GOOGL OR " +
-            "TSLA OR RIVN OR LI OR Tesla OR MRNA OR AMGN OR GILD OR Moderna";
+            "\"cloud software\" OR saas OR cybersecurity OR cyberattack OR endpoint security OR " +
+            "fintech OR payments OR \"digital payments\" OR " +
+            "NVDA OR AMD OR TSM OR NVIDIA OR MSFT OR AMZN OR GOOGL OR ORCL OR CRM OR NOW OR " +
+            "TSLA OR RIVN OR LI OR Tesla OR MRNA OR AMGN OR GILD OR Moderna OR " +
+            "CRWD OR PANW OR ZS OR V OR MA OR PYPL OR SQ";
 
     private final WebClient webClient;
     private final GdeltProperties gdeltProperties;

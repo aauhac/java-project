@@ -76,4 +76,10 @@ public final class SectorApiModels {
             List<SectorExposureDto> exposures
     ) {
     }
+
+    public record SectorOptionDto(
+            String sectorCode,
+            String sectorName
+    ) {
+    }
 }

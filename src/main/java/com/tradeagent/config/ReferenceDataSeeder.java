@@ -40,7 +40,10 @@ public class ReferenceDataSeeder {
                 new SectorMaster("SEMI", "반도체", "Semiconductor designers, foundries, and equipment leaders."),
                 new SectorMaster("AIINF", "AI 인프라", "AI infrastructure, hyperscalers, and compute platforms."),
                 new SectorMaster("EV", "전기차", "Electric vehicle manufacturers and battery ecosystem."),
-                new SectorMaster("BIO", "바이오", "Biotech and biopharma innovators.")
+                new SectorMaster("BIO", "바이오", "Biotech and biopharma innovators."),
+                new SectorMaster("CLOUD", "클라우드", "Cloud software, SaaS platforms, and enterprise infrastructure."),
+                new SectorMaster("CYBER", "사이버보안", "Cybersecurity platforms and network security leaders."),
+                new SectorMaster("FINPAY", "핀테크", "Payments, fintech platforms, and digital financial infrastructure.")
         );
 
         for (SectorMaster master : masters) {
@@ -64,7 +67,18 @@ public class ReferenceDataSeeder {
                 new SymbolSectorMap("LI", "EV", false, BigDecimal.valueOf(0.70)),
                 new SymbolSectorMap("MRNA", "BIO", true, BigDecimal.valueOf(0.80)),
                 new SymbolSectorMap("GILD", "BIO", false, BigDecimal.valueOf(0.90)),
-                new SymbolSectorMap("AMGN", "BIO", false, BigDecimal.valueOf(1.00))
+                new SymbolSectorMap("AMGN", "BIO", false, BigDecimal.valueOf(1.00)),
+                new SymbolSectorMap("MSFT", "CLOUD", true, BigDecimal.valueOf(1.00)),
+                new SymbolSectorMap("ORCL", "CLOUD", false, BigDecimal.valueOf(0.85)),
+                new SymbolSectorMap("CRM", "CLOUD", false, BigDecimal.valueOf(0.80)),
+                new SymbolSectorMap("NOW", "CLOUD", false, BigDecimal.valueOf(0.75)),
+                new SymbolSectorMap("CRWD", "CYBER", true, BigDecimal.valueOf(1.00)),
+                new SymbolSectorMap("PANW", "CYBER", false, BigDecimal.valueOf(0.90)),
+                new SymbolSectorMap("ZS", "CYBER", false, BigDecimal.valueOf(0.80)),
+                new SymbolSectorMap("V", "FINPAY", true, BigDecimal.valueOf(1.00)),
+                new SymbolSectorMap("MA", "FINPAY", false, BigDecimal.valueOf(0.95)),
+                new SymbolSectorMap("PYPL", "FINPAY", false, BigDecimal.valueOf(0.70)),
+                new SymbolSectorMap("SQ", "FINPAY", false, BigDecimal.valueOf(0.65))
         );
 
         for (SymbolSectorMap mapping : mappings) {
@@ -89,7 +103,19 @@ public class ReferenceDataSeeder {
                 new SectorProxy("BIO", "MRNA", "STOCK", BigDecimal.valueOf(0.80)),
                 new SectorProxy("BIO", "GILD", "STOCK", BigDecimal.valueOf(0.90)),
                 new SectorProxy("BIO", "AMGN", "STOCK", BigDecimal.valueOf(1.00)),
-                new SectorProxy("BIO", "IBB", "ETF", BigDecimal.valueOf(0.70))
+                new SectorProxy("BIO", "IBB", "ETF", BigDecimal.valueOf(0.70)),
+                new SectorProxy("CLOUD", "MSFT", "STOCK", BigDecimal.valueOf(1.00)),
+                new SectorProxy("CLOUD", "ORCL", "STOCK", BigDecimal.valueOf(0.85)),
+                new SectorProxy("CLOUD", "CRM", "STOCK", BigDecimal.valueOf(0.80)),
+                new SectorProxy("CLOUD", "NOW", "STOCK", BigDecimal.valueOf(0.75)),
+                new SectorProxy("CYBER", "CRWD", "STOCK", BigDecimal.valueOf(1.00)),
+                new SectorProxy("CYBER", "PANW", "STOCK", BigDecimal.valueOf(0.90)),
+                new SectorProxy("CYBER", "ZS", "STOCK", BigDecimal.valueOf(0.80)),
+                new SectorProxy("CYBER", "CIBR", "ETF", BigDecimal.valueOf(0.70)),
+                new SectorProxy("FINPAY", "V", "STOCK", BigDecimal.valueOf(1.00)),
+                new SectorProxy("FINPAY", "MA", "STOCK", BigDecimal.valueOf(0.95)),
+                new SectorProxy("FINPAY", "PYPL", "STOCK", BigDecimal.valueOf(0.70)),
+                new SectorProxy("FINPAY", "SQ", "STOCK", BigDecimal.valueOf(0.65))
         );
 
         for (SectorProxy proxy : proxies) {

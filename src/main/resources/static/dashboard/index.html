@@ -7,7 +7,7 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/css/style.css">
     <script src="/js/layout.js" defer></script>
-    <script src="/js/api.js?v=20260517-1" defer></script>
+    <script src="/js/api.js?v=20260517-2" defer></script>
     <script src="/js/format.js" defer></script>
     <script src="/js/charts.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
@@ -70,8 +70,8 @@
                             <input class="input" name="symbol" required>
                         </label>
                         <label class="form-label">
-                            Sector Code
-                            <input class="input" name="sectorCode" placeholder="SEMI" required>
+                            Sector
+                            <select class="input" id="buy-sector-select" name="sectorCode" required></select>
                         </label>
                         <label class="form-label">
                             Price
@@ -143,6 +143,18 @@
             </div>
         </div>
     </section>
+
+    <section class="section">
+        <div class="section-header">
+            <div>
+                <h2 class="section-title">거래 내역</h2>
+                <p class="section-subtitle">대시보드 하단에서 H2에 저장된 체결 이력을 확인합니다.</p>
+            </div>
+        </div>
+        <div class="card">
+            <div id="trade-history-table"></div>
+        </div>
+    </section>
 </main>
 
 <script>
@@ -155,10 +167,12 @@
 
     let priceChart;
     let sectorDoughnut;
+    let sectorOptions = [];
 
     window.addEventListener('DOMContentLoaded', async () => {
         Layout.mountNavigation('dashboard');
         initializeDateInputs();
+        await loadSectorOptions();
         syncFormsWithSelectedSymbol();
         bindEventHandlers();
         priceChart = Charts.createTradingViewChart('dashboard-chart', {height: 460});
@@ -221,18 +235,33 @@
         const statusHost = document.getElementById('page-status');
         statusHost.innerHTML = Layout.alert('포트폴리오 데이터를 불러오는 중입니다.', 'info');
         try {
-            const [summaryResponse, positionsResponse, sectorsResponse] = await Promise.all([
+            const [summaryResponse, positionsResponse, sectorsResponse, tradeHistoryResponse] = await Promise.all([
                 API.getPortfolioSummary(1),
                 API.getPortfolioPositions(1),
-                API.getSectorAllocation(1)
+                API.getSectorAllocation(1),
+                API.getTradeHistory(1)
             ]);
             renderSummary(summaryResponse.data);
             renderPositions(positionsResponse.data || []);
             renderSectorAllocation(sectorsResponse.data || []);
+            renderTradeHistory(tradeHistoryResponse.data || []);
             statusHost.innerHTML = Layout.alert('포트폴리오 데이터 로딩이 완료되었습니다.', 'success');
         } catch (error) {
             statusHost.innerHTML = Layout.alert(error.message || '대시보드 데이터를 불러오지 못했습니다.', 'error');
         }
+    }
+
+    async function loadSectorOptions() {
+        const response = await API.getSectorOptions();
+        sectorOptions = response.data || [];
+        const select = document.getElementById('buy-sector-select');
+        if (!sectorOptions.length) {
+            select.innerHTML = '<option value="">선택 가능한 섹터가 없습니다.</option>';
+            return;
+        }
+        select.innerHTML = sectorOptions.map(item => `
+            <option value="${Layout.escapeHtml(item.sectorCode)}">${Layout.escapeHtml(item.sectorName)} (${Layout.escapeHtml(item.sectorCode)})</option>
+        `).join('');
     }
 
     async function loadChart() {
@@ -367,6 +396,43 @@
         `;
     }
 
+    function renderTradeHistory(items) {
+        const host = document.getElementById('trade-history-table');
+        if (!items.length) {
+            host.innerHTML = Layout.empty('저장된 거래 내역이 없습니다.');
+            return;
+        }
+
+        host.innerHTML = `
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                    <tr>
+                        <th>시각</th>
+                        <th>심볼</th>
+                        <th>섹터</th>
+                        <th>유형</th>
+                        <th>가격</th>
+                        <th>수량</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    ${items.map(item => `
+                        <tr>
+                            <td>${Format.dateTime(item.tradedAt)}</td>
+                            <td><strong>${Layout.escapeHtml(item.symbol)}</strong></td>
+                            <td>${Layout.escapeHtml(item.sectorCode || '-')}</td>
+                            <td>${Layout.escapeHtml(item.tradeType)}</td>
+                            <td>${Format.currency(item.price)}</td>
+                            <td>${Format.integer(item.quantity)}</td>
+                        </tr>
+                    `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
     async function submitBuy(form) {
         const statusHost = document.getElementById('page-status');
         const formData = new FormData(form);
@@ -418,6 +484,9 @@
         const sellForm = document.getElementById('sell-form');
         buyForm.elements.symbol.value = symbol;
         sellForm.elements.symbol.value = symbol;
+        if (sectorOptions.length && !buyForm.elements.sectorCode.value) {
+            buyForm.elements.sectorCode.value = sectorOptions[0].sectorCode;
+        }
         updateSelectedSymbolMeta();
     }
 

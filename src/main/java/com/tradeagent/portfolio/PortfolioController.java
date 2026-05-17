@@ -4,6 +4,7 @@ import com.tradeagent.common.ApiResponse;
 import com.tradeagent.portfolio.PortfolioApiModels.PortfolioSummaryDto;
 import com.tradeagent.portfolio.PortfolioApiModels.PositionDto;
 import com.tradeagent.portfolio.PortfolioApiModels.SectorAllocationDto;
+import com.tradeagent.portfolio.PortfolioApiModels.TradeHistoryDto;
 import com.tradeagent.portfolio.PortfolioApiModels.TradeRequestDto;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -48,5 +49,10 @@ public class PortfolioController {
     @GetMapping("/{userId}/sector-allocation")
     public ApiResponse<List<SectorAllocationDto>> getSectorAllocation(@PathVariable Long userId) {
         return ApiResponse.ok(portfolioService.getSectorAllocation(userId));
+    }
+
+    @GetMapping("/{userId}/trades")
+    public ApiResponse<List<TradeHistoryDto>> getTradeHistory(@PathVariable Long userId) {
+        return ApiResponse.ok(portfolioService.getTradeHistory(userId));
     }
 }

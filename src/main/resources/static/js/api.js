@@ -40,6 +40,9 @@
         getSectorAllocation(userId = 1) {
             return request(`/api/portfolio/${userId}/sector-allocation`);
         },
+        getTradeHistory(userId = 1) {
+            return request(`/api/portfolio/${userId}/trades`);
+        },
         buyStock(payload) {
             return request('/api/portfolio/buy', {
                 method: 'POST',
@@ -84,6 +87,9 @@
         },
         getSectorScores() {
             return request('/api/sectors/scores');
+        },
+        getSectorOptions() {
+            return request('/api/sectors/masters');
         },
         analyzeSectorTrend(date) {
             return request(`/api/sectors/analyze-trend${buildQuery({date})}`, {

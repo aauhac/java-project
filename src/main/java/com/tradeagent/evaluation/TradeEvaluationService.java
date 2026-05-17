@@ -151,19 +151,25 @@ public class TradeEvaluationService {
         TradePairContext tradePairContext = resolveTradePair(tradeHistory);
         List<PortfolioPosition> positions = portfolioRepository.findByUserId(tradeHistory.getUserId());
 
-        BigDecimal entryScore = entryScoreCalculator.calculate(new EntryScoreInput(
+        BigDecimal entryScore = tradePairContext.buyTrade() != null
+                ? entryScoreCalculator.calculate(new EntryScoreInput(
                 tradePairContext.buyTrade(),
                 loadBarsAfterEntry(tradePairContext.buyTrade())
-        ));
-        BigDecimal exitScore = exitScoreCalculator.calculate(new ExitScoreInput(
+        ))
+                : neutralScore();
+        BigDecimal exitScore = tradePairContext.sellTrade() != null
+                ? exitScoreCalculator.calculate(new ExitScoreInput(
                 tradePairContext.sellTrade(),
                 loadBarsAroundExit(tradePairContext.sellTrade())
-        ));
-        BigDecimal riskScore = riskScoreCalculator.calculate(new RiskScoreInput(
+        ))
+                : neutralScore();
+        BigDecimal riskScore = tradePairContext.buyTrade() != null
+                ? riskScoreCalculator.calculate(new RiskScoreInput(
                 tradePairContext.buyTrade(),
                 tradePairContext.sellTrade(),
                 loadHoldingBars(tradePairContext.buyTrade(), tradePairContext.sellTrade())
-        ));
+        ))
+                : neutralScore();
         BigDecimal diversificationScore = diversificationScoreCalculator.calculate(new DiversificationScoreInput(
                 tradeHistory.getUserId(),
                 positions
@@ -346,6 +352,10 @@ public class TradeEvaluationService {
 
     private BigDecimal zeroScore() {
         return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal neutralScore() {
+        return BigDecimal.valueOf(50).setScale(2, RoundingMode.HALF_UP);
     }
 
     private record TradePairContext(TradeHistory buyTrade, TradeHistory sellTrade) {

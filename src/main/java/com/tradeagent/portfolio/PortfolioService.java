@@ -7,6 +7,7 @@ import com.tradeagent.market.MarketDataService;
 import com.tradeagent.portfolio.PortfolioApiModels.PortfolioSummaryDto;
 import com.tradeagent.portfolio.PortfolioApiModels.PositionDto;
 import com.tradeagent.portfolio.PortfolioApiModels.SectorAllocationDto;
+import com.tradeagent.portfolio.PortfolioApiModels.TradeHistoryDto;
 import com.tradeagent.portfolio.PortfolioApiModels.TradeRequestDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,15 +26,18 @@ public class PortfolioService {
     private final TradeRegistrationService tradeRegistrationService;
     private final MarketDataService marketDataService;
     private final PortfolioMapper portfolioMapper;
+    private final TradeHistoryRepository tradeHistoryRepository;
 
     public PortfolioService(PortfolioRepository portfolioRepository,
                             TradeRegistrationService tradeRegistrationService,
                             MarketDataService marketDataService,
-                            PortfolioMapper portfolioMapper) {
+                            PortfolioMapper portfolioMapper,
+                            TradeHistoryRepository tradeHistoryRepository) {
         this.portfolioRepository = portfolioRepository;
         this.tradeRegistrationService = tradeRegistrationService;
         this.marketDataService = marketDataService;
         this.portfolioMapper = portfolioMapper;
+        this.tradeHistoryRepository = tradeHistoryRepository;
     }
 
     @Transactional
@@ -84,6 +88,12 @@ public class PortfolioService {
         return marketValueBySector.entrySet().stream()
                 .sorted(Map.Entry.<String, BigDecimal>comparingByValue().reversed())
                 .map(entry -> portfolioMapper.toSectorAllocationDto(entry.getKey(), entry.getValue(), totalMarketValue))
+                .toList();
+    }
+
+    public List<TradeHistoryDto> getTradeHistory(Long userId) {
+        return tradeHistoryRepository.findByUserIdOrderByTradedAtDesc(userId).stream()
+                .map(portfolioMapper::toTradeHistoryDto)
                 .toList();
     }
 }

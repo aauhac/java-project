@@ -4,6 +4,7 @@ import com.tradeagent.common.ApiResponse;
 import com.tradeagent.sector.SectorApiModels.NewsEventDto;
 import com.tradeagent.sector.SectorApiModels.PortfolioSectorDiagnosticDto;
 import com.tradeagent.sector.SectorApiModels.PortfolioTrendMatchDto;
+import com.tradeagent.sector.SectorApiModels.SectorOptionDto;
 import com.tradeagent.sector.SectorApiModels.SectorScoreDto;
 import com.tradeagent.sector.SectorApiModels.SectorTrendDto;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,6 +36,11 @@ public class SectorController {
     @GetMapping("/scores")
     public ApiResponse<List<SectorScoreDto>> getScores() {
         return ApiResponse.ok(sectorAnalysisService.getLatestSectorScores());
+    }
+
+    @GetMapping("/masters")
+    public ApiResponse<List<SectorOptionDto>> getSectorOptions() {
+        return ApiResponse.ok(sectorAnalysisService.getSectorOptions());
     }
 
     @GetMapping("/{sectorCode}/score")

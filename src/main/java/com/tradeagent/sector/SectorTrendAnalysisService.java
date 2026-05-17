@@ -33,12 +33,15 @@ public class SectorTrendAnalysisService {
 
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
     private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-    private static final BigDecimal SIMILARITY_THRESHOLD = new BigDecimal("0.18");
+    private static final BigDecimal SIMILARITY_THRESHOLD = new BigDecimal("0.12");
     private static final Map<String, List<String>> PROFILE_TERMS_BY_SECTOR = Map.of(
             "SEMI", List.of("semiconductor", "chip", "foundry", "fab", "fabless", "gpu", "memory", "nvidia", "amd", "tsm", "asml"),
             "AIINF", List.of("artificial intelligence", "ai", "infrastructure", "datacenter", "cloud", "compute", "server", "accelerator", "microsoft", "amazon", "google", "oracle"),
             "EV", List.of("electric vehicle", "ev", "battery", "charging", "autonomous", "tesla", "rivian", "nio", "li auto", "byd"),
-            "BIO", List.of("biotech", "biopharma", "pharma", "drug", "trial", "fda", "therapy", "vaccine", "moderna", "amgen", "gilead")
+            "BIO", List.of("biotech", "biopharma", "pharma", "drug", "trial", "fda", "therapy", "vaccine", "moderna", "amgen", "gilead"),
+            "CLOUD", List.of("cloud", "cloud software", "saas", "enterprise software", "azure", "oracle cloud", "salesforce", "serviceNow", "msft", "orcl", "crm", "now"),
+            "CYBER", List.of("cybersecurity", "cyber", "network security", "endpoint security", "zero trust", "crowdstrike", "palo alto", "zscaler", "crwd", "panw", "zs"),
+            "FINPAY", List.of("fintech", "payments", "digital payments", "wallet", "merchant", "card network", "visa", "mastercard", "paypal", "block", "v", "ma", "pypl", "sq")
     );
     private static final List<String> EMBEDDING_VOCABULARY = PROFILE_TERMS_BY_SECTOR.values().stream()
             .flatMap(Collection::stream)

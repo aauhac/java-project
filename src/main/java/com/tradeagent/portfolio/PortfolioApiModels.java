@@ -1,6 +1,7 @@
 package com.tradeagent.portfolio;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 public final class PortfolioApiModels {
 
@@ -50,6 +51,16 @@ public final class PortfolioApiModels {
             String sectorCode,
             BigDecimal currentPrice,
             BigDecimal changeRate
+    ) {
+    }
+
+    public record TradeHistoryDto(
+            String symbol,
+            String sectorCode,
+            String tradeType,
+            BigDecimal price,
+            Integer quantity,
+            LocalDateTime tradedAt
     ) {
     }
 }
