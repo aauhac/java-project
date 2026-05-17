@@ -101,6 +101,16 @@
                 method: 'POST'
             });
         },
+        refreshSectorNewsTrend(date, force = true) {
+            return request(`/api/sectors/refresh-news-trend${buildQuery({date, force})}`, {
+                method: 'POST'
+            });
+        },
+        refreshSectorNewsTrendForUser(userId = 1, date, force = true) {
+            return request(`/api/sectors/user/${userId}/refresh-news-trend${buildQuery({date, force})}`, {
+                method: 'POST'
+            });
+        },
         getSectorTrends(date) {
             return request(`/api/sectors/trends${buildQuery({date})}`);
         },
@@ -112,6 +122,9 @@
         },
         getSectorDiagnostic(userId = 1) {
             return request(`/api/sectors/user/${userId}/diagnostic`);
+        },
+        getGdeltStatus() {
+            return request('/api/sectors/gdelt-status');
         },
         getSectorFeedback(userId = 1) {
             return request(`/api/feedback/${userId}/sector`);

@@ -1,16 +1,21 @@
 package com.tradeagent.sector;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tradeagent.common.ErrorCode;
 import com.tradeagent.common.ExternalApiException;
+import com.tradeagent.common.GdeltRateLimitException;
+import com.tradeagent.common.GdeltSupport;
 import com.tradeagent.common.ValidationException;
 import com.tradeagent.config.GdeltProperties;
 import com.tradeagent.config.VllmProperties;
 import com.tradeagent.feedback.VllmClient;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
@@ -21,6 +26,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.nio.file.Path;
 
 @Component
 public class GdeltClient {
@@ -50,6 +56,10 @@ public class GdeltClient {
     private final GdeltProperties gdeltProperties;
     private final VllmClient vllmClient;
     private final VllmProperties vllmProperties;
+    private final ObjectMapper objectMapper;
+    private final Path lastRequestFile;
+    private final Path cacheDir;
+    private final Duration cacheTtl;
 
     public GdeltClient(WebClient.Builder webClientBuilder,
                        GdeltProperties gdeltProperties,
@@ -58,34 +68,66 @@ public class GdeltClient {
         this.gdeltProperties = gdeltProperties;
         this.vllmClient = vllmClient;
         this.vllmProperties = vllmProperties;
-        this.webClient = webClientBuilder.baseUrl(normalizeBaseUrl(gdeltProperties.getBaseUrl())).build();
+        this.webClient = webClientBuilder
+                .baseUrl(normalizeBaseUrl(gdeltProperties.getBaseUrl()))
+                .defaultHeader("User-Agent", "TradeAgent-GdeltClient/1.0")
+                .build();
+        this.objectMapper = new ObjectMapper();
+        this.lastRequestFile = GdeltSupport.defaultLastRequestFile(gdeltProperties.getLastRequestFile());
+        this.cacheDir = GdeltSupport.defaultCacheDir(gdeltProperties.getCacheDir());
+        this.cacheTtl = Duration.ofHours(Math.max(gdeltProperties.getCacheTtlHours(), 1));
     }
 
     public List<NewsEvent> fetchSectorNews(String sectorCode, LocalDate date) {
+        return fetchSectorNews(sectorCode, date, false);
+    }
+
+    public List<NewsEvent> fetchSectorNews(String sectorCode, LocalDate date, boolean forceRefresh) {
         String resolvedSectorCode = normalizeSectorCode(sectorCode);
         LocalDate resolvedDate = date != null ? date : LocalDate.now();
-        return requestArticles(buildSectorQuery(resolvedSectorCode), resolvedDate, resolvedDate, 20).stream()
+        return requestArticles(buildSectorQuery(resolvedSectorCode), resolvedDate, resolvedDate, 20, forceRefresh).stream()
                 .map(article -> toNewsEvent(article, resolvedSectorCode, resolvedDate))
                 .toList();
     }
 
     public List<NewsEvent> fetchMarketNews(LocalDate from, LocalDate to) {
+        return fetchMarketNews(from, to, false);
+    }
+
+    public List<NewsEvent> fetchMarketNews(LocalDate from, LocalDate to, boolean forceRefresh) {
         LocalDate resolvedFrom = from != null ? from : LocalDate.now().minusDays(gdeltProperties.getLookbackDays());
         LocalDate resolvedTo = to != null ? to : LocalDate.now();
         if (resolvedFrom.isAfter(resolvedTo)) {
             throw new ValidationException(ErrorCode.INVALID_INPUT, "from must be on or before to");
         }
 
-        return requestArticles(BROAD_MARKET_QUERY, resolvedFrom, resolvedTo, gdeltProperties.getMaxRecords()).stream()
+        return requestArticles(BROAD_MARKET_QUERY, resolvedFrom, resolvedTo, gdeltProperties.getMaxRecords(), forceRefresh).stream()
                 .map(article -> toNewsEvent(article, "UNCLASSIFIED", resolvedTo))
                 .toList();
     }
 
-    private List<GdeltArticle> requestArticles(String query, LocalDate from, LocalDate to, int maxRecords) {
+    private List<GdeltArticle> requestArticles(String query, LocalDate from, LocalDate to, int maxRecords, boolean forceRefresh) {
+        String normalizedQuery = normalizeQuery(query);
+        String cacheKey = GdeltSupport.cacheKey(normalizedQuery, from, to, maxRecords);
         try {
-            GdeltDocResponse response = webClient.get()
+            if (!forceRefresh) {
+                var cached = GdeltSupport.loadCache(cacheDir, cacheKey, cacheTtl);
+                if (cached.isPresent()) {
+                    try {
+                        GdeltDocResponse response = parseDocResponse(cached.get().body(), 200);
+                        if (response != null && response.articles() != null) {
+                            return response.articles();
+                        }
+                    } catch (RuntimeException ex) {
+                        // Ignore stale or corrupted cache and fall through to a live request.
+                    }
+                }
+            }
+
+            long waitMs = GdeltSupport.reserveRequestSlot(lastRequestFile, gdeltProperties.getMinRequestIntervalMs());
+            RawGdeltResponse raw = webClient.get()
                     .uri(uriBuilder -> uriBuilder.path("/doc/doc")
-                            .queryParam("query", query)
+                            .queryParam("query", normalizedQuery)
                             .queryParam("mode", "ArtList")
                             .queryParam("maxrecords", maxRecords)
                             .queryParam("format", "json")
@@ -93,20 +135,75 @@ public class GdeltClient {
                             .queryParam("startdatetime", formatDateTime(from.atStartOfDay()))
                             .queryParam("enddatetime", formatDateTime(to.atTime(LocalTime.MAX)))
                             .build())
-                    .retrieve()
-                    .bodyToMono(GdeltDocResponse.class)
+                    .exchangeToMono(response -> response.bodyToMono(String.class)
+                            .defaultIfEmpty("")
+                            .map(body -> new RawGdeltResponse(response.statusCode(), body)))
                     .block(Duration.ofSeconds(gdeltProperties.getTimeoutSeconds()));
 
+            if (raw == null) {
+                return List.of();
+            }
+            if (raw.statusCode().value() == 429 || isRateLimitBody(raw.body())) {
+                throw new GdeltRateLimitException("GDELT 요청 제한(429)으로 동향 분석을 수행하지 못했습니다. 잠시 후 다시 시도하세요.");
+            }
+            if (raw.statusCode().isError()) {
+                throw new ExternalApiException(ErrorCode.GDELT_API_ERROR,
+                        "GDELT request failed with status " + raw.statusCode().value());
+            }
+            GdeltDocResponse response = parseDocResponse(raw.body(), raw.statusCode().value());
             if (response == null || response.articles() == null) {
                 return List.of();
             }
+            if (!isRateLimitBody(raw.body()) && isLikelyJson(raw.body())) {
+                GdeltSupport.saveCache(cacheDir, cacheKey, raw.body());
+            }
             return response.articles();
+        } catch (GdeltRateLimitException ex) {
+            throw ex;
+        } catch (ExternalApiException ex) {
+            throw ex;
         } catch (WebClientResponseException ex) {
+            if (ex.getStatusCode().value() == 429 || isRateLimitBody(ex.getResponseBodyAsString())) {
+                throw new GdeltRateLimitException("GDELT 요청 제한(429)으로 동향 분석을 수행하지 못했습니다. 잠시 후 다시 시도하세요.");
+            }
             throw new ExternalApiException(ErrorCode.GDELT_API_ERROR,
                     "GDELT request failed with status " + ex.getStatusCode().value());
         } catch (RuntimeException ex) {
             throw new ExternalApiException(ErrorCode.GDELT_API_ERROR, "GDELT request failed");
         }
+    }
+
+    private GdeltDocResponse parseDocResponse(String body, int statusCode) {
+        if (!StringUtils.hasText(body)) {
+            return new GdeltDocResponse(List.of());
+        }
+        try {
+            return objectMapper.readValue(body, GdeltDocResponse.class);
+        } catch (IOException ex) {
+            if (isRateLimitBody(body)) {
+                throw new GdeltRateLimitException("GDELT 요청 제한으로 동향 분석을 수행하지 못했습니다. 잠시 후 다시 시도하세요.");
+            }
+            throw new ExternalApiException(ErrorCode.GDELT_API_ERROR,
+                    "GDELT response parse failed with status " + statusCode);
+        }
+    }
+
+    private boolean isRateLimitBody(String body) {
+        if (!StringUtils.hasText(body)) {
+            return false;
+        }
+        String normalized = body.toLowerCase(Locale.ROOT);
+        return normalized.contains("please limit requests")
+                || normalized.contains("one every 5 seconds")
+                || normalized.contains("rate limit");
+    }
+
+    private boolean isLikelyJson(String body) {
+        if (!StringUtils.hasText(body)) {
+            return false;
+        }
+        String trimmed = body.trim();
+        return trimmed.startsWith("{") || trimmed.startsWith("[");
     }
 
     private NewsEvent toNewsEvent(GdeltArticle article, String sectorCode, LocalDate fallbackDate) {
@@ -126,6 +223,17 @@ public class GdeltClient {
             throw new ExternalApiException(ErrorCode.GDELT_API_ERROR, "GDELT baseUrl is not configured");
         }
         return baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+    }
+
+    private String normalizeQuery(String query) {
+        if (!StringUtils.hasText(query)) {
+            throw new ValidationException(ErrorCode.INVALID_INPUT, "query must not be blank");
+        }
+        String trimmed = query.trim();
+        if (trimmed.contains(" OR ") && !(trimmed.startsWith("(") && trimmed.endsWith(")"))) {
+            return "(" + trimmed + ")";
+        }
+        return trimmed;
     }
 
     private String normalizeSectorCode(String sectorCode) {
@@ -225,4 +333,7 @@ record GdeltDocResponse(List<GdeltArticle> articles) {
 }
 
 record GdeltArticle(String title, String url, String domain, String seendate) {
+}
+
+record RawGdeltResponse(HttpStatusCode statusCode, String body) {
 }

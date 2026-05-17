@@ -34,6 +34,13 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.fail(ex.getErrorCode(), ex.getMessage()));
     }
 
+    @ExceptionHandler(GdeltRateLimitException.class)
+    public ResponseEntity<ApiResponse<Void>> handleGdeltRateLimit(GdeltRateLimitException ex) {
+        log.warn("GdeltRateLimitException: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(ApiResponse.fail(ex.getErrorCode(), ex.getMessage()));
+    }
+
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException ex) {
         log.error("BusinessException: {}", ex.getMessage());

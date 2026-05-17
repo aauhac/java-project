@@ -59,14 +59,15 @@
         <div class="section-header">
             <div>
                 <h2 class="section-title">섹터 동향 분석</h2>
-                <p class="section-subtitle">날짜별 뉴스 동향 점수와 포트폴리오 일치도를 비교합니다.</p>
+                <p class="section-subtitle">저장된 동향을 보고, 필요할 때만 뉴스를 갱신합니다.</p>
             </div>
-            <div class="form-grid" style="grid-template-columns: repeat(2, minmax(140px, 1fr)); max-width: 320px;">
+            <div class="form-grid" style="grid-template-columns: repeat(3, minmax(120px, 1fr)); max-width: 520px;">
                 <label class="form-label">
                     기준 날짜
                     <input class="input" id="trend-date" type="date">
                 </label>
-                <button class="button" id="analyze-trend-button" type="button" style="align-self: end;">동향 분석</button>
+                <button class="button secondary" id="view-trend-button" type="button" style="align-self: end;">동향 보기</button>
+                <button class="button" id="refresh-trend-button" type="button" style="align-self: end;">뉴스 갱신</button>
             </div>
         </div>
         <div id="sector-scoreboard" class="grid cols-4"></div>
@@ -78,7 +79,7 @@
 <script>
     const trendState = {
         selectedDate: '',
-        isAnalyzing: false
+        isRefreshing: false
     };
 
     window.addEventListener('DOMContentLoaded', async () => {
@@ -369,27 +370,31 @@
             await reloadTrendPanels(false);
         });
 
-        document.getElementById('analyze-trend-button').addEventListener('click', async () => {
-            if (trendState.isAnalyzing) {
+        document.getElementById('view-trend-button').addEventListener('click', async () => {
+            await reloadTrendPanels(false);
+        });
+
+        document.getElementById('refresh-trend-button').addEventListener('click', async () => {
+            if (trendState.isRefreshing) {
                 return;
             }
             await reloadTrendPanels(true);
         });
     }
 
-    async function reloadTrendPanels(runAnalysis) {
+    async function reloadTrendPanels(refreshNews) {
         const statusHost = document.getElementById('page-status');
-        const analyzeButton = document.getElementById('analyze-trend-button');
-        if (runAnalysis) {
-            trendState.isAnalyzing = true;
-            analyzeButton.disabled = true;
+        const refreshButton = document.getElementById('refresh-trend-button');
+        if (refreshNews) {
+            trendState.isRefreshing = true;
+            refreshButton.disabled = true;
         }
-        statusHost.innerHTML = Layout.alert(runAnalysis ? '섹터 동향 분석을 실행하는 중입니다.' : '선택 날짜의 섹터 동향을 불러오는 중입니다.', 'info');
+        statusHost.innerHTML = Layout.alert(refreshNews ? '뉴스를 갱신하는 중입니다.' : '선택 날짜의 저장된 섹터 동향을 불러오는 중입니다.', 'info');
         try {
             let trendsResponse;
             let trendMatchResponse;
-            if (runAnalysis) {
-                const response = await API.analyzeSectorTrendForUser(1, trendState.selectedDate);
+            if (refreshNews) {
+                const response = await API.refreshSectorNewsTrendForUser(1, trendState.selectedDate, true);
                 trendsResponse = {data: response.data?.trends || []};
                 trendMatchResponse = {data: response.data?.trendMatch || null};
             } else {
@@ -401,16 +406,21 @@
             renderScores(trendsResponse.data || []);
             renderTrendMatch(trendMatchResponse.data);
             renderExposure(hasStoredTrendData(trendMatchResponse.data) ? (trendMatchResponse.data?.exposures || []) : []);
-            statusHost.innerHTML = Layout.alert(runAnalysis ? '섹터 동향 분석이 완료되었습니다.' : '날짜별 섹터 동향을 불러왔습니다.', 'success');
+            const hasArticles = (trendsResponse.data || []).some(score => Number(score.articleCount || 0) > 0);
+            if (refreshNews && !hasArticles) {
+                statusHost.innerHTML = Layout.alert('뉴스 갱신은 완료됐지만 기사 수집이 0건입니다. 잠시 후 다시 시도하거나 강제 재갱신(force)로 확인하세요.', 'warning');
+            } else {
+                statusHost.innerHTML = Layout.alert(refreshNews ? '뉴스 갱신이 완료되었습니다.' : '날짜별 섹터 동향을 불러왔습니다.', 'success');
+            }
         } catch (error) {
-            const message = runAnalysis
-                ? `호출에 실패했습니다. ${error.message || '섹터 동향을 불러오지 못했습니다.'}`
+            const message = refreshNews
+                ? `호출에 실패했습니다. ${error.message || '뉴스를 갱신하지 못했습니다.'}`
                 : (error.message || '섹터 동향을 불러오지 못했습니다.');
             statusHost.innerHTML = Layout.alert(message, 'error');
         } finally {
-            if (runAnalysis) {
-                trendState.isAnalyzing = false;
-                analyzeButton.disabled = false;
+            if (refreshNews) {
+                trendState.isRefreshing = false;
+                refreshButton.disabled = false;
             }
         }
     }

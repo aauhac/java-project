@@ -3,6 +3,7 @@ package com.tradeagent.sector;
 import com.tradeagent.common.DateTimeUtil;
 import com.tradeagent.common.ErrorCode;
 import com.tradeagent.common.ExternalApiException;
+import com.tradeagent.common.GdeltRateLimitException;
 import com.tradeagent.common.NotFoundException;
 import com.tradeagent.common.ValidationException;
 import com.tradeagent.config.GdeltProperties;
@@ -75,28 +76,57 @@ public class SectorTrendAnalysisService {
 
     @Transactional
     public List<SectorTrendDto> analyze(LocalDate date) {
-        return analyze(date, false);
+        return analyze(date, false, false);
     }
 
     @Transactional
     public List<SectorTrendDto> analyzeStrict(LocalDate date) {
-        return analyze(date, true);
+        return analyzeStrict(date, false);
     }
 
-    private List<SectorTrendDto> analyze(LocalDate date, boolean failOnFetchError) {
+    @Transactional
+    public List<SectorTrendDto> analyzeStrict(LocalDate date, boolean forceRefresh) {
+        return analyze(date, true, forceRefresh);
+    }
+
+    @Transactional
+    public List<SectorTrendDto> refreshTrendAnalysis(LocalDate date, boolean forceRefresh) {
+        return analyze(date, true, forceRefresh);
+    }
+
+    private List<SectorTrendDto> analyze(LocalDate date, boolean failOnFetchError, boolean forceRefresh) {
         LocalDate resolvedDate = resolveDate(date);
         LocalDate fromDate = resolvedDate.minusDays(Math.max(gdeltProperties.getLookbackDays(), 0));
         List<SectorMaster> masters = sectorMasterRepository.findAllByOrderBySectorCodeAsc();
         Map<String, SectorMaster> masterMap = masters.stream()
                 .collect(Collectors.toMap(SectorMaster::getSectorCode, Function.identity()));
         Map<String, SectorProfile> sectorProfiles = refreshSectorProfiles(masters);
+        List<SectorTrendDto> existingScores = loadExistingScores(masters, resolvedDate);
+
+        if (!forceRefresh && !existingScores.isEmpty() && canReuseExistingScores(existingScores)) {
+            return existingScores;
+        }
 
         List<NewsEvent> classifiedNews;
         try {
-            classifiedNews = refreshClassifiedNews(fromDate, resolvedDate, sectorProfiles);
-        } catch (ExternalApiException ex) {
+            classifiedNews = refreshClassifiedNews(fromDate, resolvedDate, sectorProfiles, forceRefresh);
+        } catch (GdeltRateLimitException ex) {
+            if (!existingScores.isEmpty() && canReuseExistingScores(existingScores)) {
+                return existingScores;
+            }
             if (failOnFetchError) {
-                throw new ExternalApiException(ErrorCode.GDELT_API_ERROR, "호출에 실패했습니다. " + ex.getMessage());
+                throw ex;
+            }
+            classifiedNews = newsEventRepository.findByPublishedAtBetweenOrderByPublishedAtDesc(
+                    fromDate.atStartOfDay(),
+                    resolvedDate.atTime(LocalTime.MAX)
+            );
+        } catch (ExternalApiException ex) {
+            if (!existingScores.isEmpty() && canReuseExistingScores(existingScores)) {
+                return existingScores;
+            }
+            if (failOnFetchError) {
+                throw ex;
             }
             classifiedNews = newsEventRepository.findByPublishedAtBetweenOrderByPublishedAtDesc(
                     fromDate.atStartOfDay(),
@@ -105,9 +135,8 @@ public class SectorTrendAnalysisService {
         }
 
         if (classifiedNews.isEmpty()) {
-            List<SectorTrendDto> existing = loadExistingScores(masters, resolvedDate);
-            if (!existing.isEmpty() && canReuseExistingScores(existing)) {
-                return existing;
+            if (!existingScores.isEmpty() && canReuseExistingScores(existingScores)) {
+                return existingScores;
             }
         }
 
@@ -209,8 +238,9 @@ public class SectorTrendAnalysisService {
 
     private List<NewsEvent> refreshClassifiedNews(LocalDate fromDate,
                                                   LocalDate toDate,
-                                                  Map<String, SectorProfile> sectorProfiles) {
-        List<NewsEvent> fetched = gdeltClient.fetchMarketNews(fromDate, toDate);
+                                                  Map<String, SectorProfile> sectorProfiles,
+                                                  boolean forceRefresh) {
+        List<NewsEvent> fetched = gdeltClient.fetchMarketNews(fromDate, toDate, forceRefresh);
         Map<String, NewsEvent> deduped = new LinkedHashMap<>();
 
         for (NewsEvent event : fetched) {
@@ -358,9 +388,7 @@ public class SectorTrendAnalysisService {
     }
 
     private boolean canReuseExistingScores(List<SectorTrendDto> scores) {
-        return scores.stream().allMatch(score ->
-                score.articleCount() > 0 || score.totalSectorScore().compareTo(ZERO) == 0
-        );
+        return scores.stream().anyMatch(score -> score.articleCount() > 0);
     }
 
     private boolean hasInconsistentEmptyScores(List<SectorNewsScore> scores) {
