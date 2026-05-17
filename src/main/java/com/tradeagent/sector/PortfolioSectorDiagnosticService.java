@@ -23,6 +23,9 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class PortfolioSectorDiagnosticService {
 
+    private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+    private static final String NO_TREND_DATA_MESSAGE = "저장된 동향 분석 데이터가 없습니다. 동향 분석 버튼을 눌러주세요.";
+
     private final PortfolioRepository portfolioRepository;
     private final SectorMasterRepository sectorMasterRepository;
     private final SectorAnalysisService sectorAnalysisService;
@@ -60,7 +63,18 @@ public class PortfolioSectorDiagnosticService {
     }
 
     public PortfolioTrendMatchDto calculateTrendMatch(Long userId, LocalDate date) {
-        return calculateTrendMatch(userId, date, sectorTrendAnalysisService.getTrendScores(date));
+        List<SectorTrendDto> scores = sectorTrendAnalysisService.getTrendScores(date);
+        if (scores.isEmpty()) {
+            return new PortfolioTrendMatchDto(
+                    date != null ? date : LocalDate.now(),
+                    ZERO,
+                    ZERO,
+                    ZERO,
+                    NO_TREND_DATA_MESSAGE,
+                    getTrendExposureBreakdown(userId, List.of())
+            );
+        }
+        return calculateTrendMatch(userId, date, scores);
     }
 
     public PortfolioTrendMatchDto calculateTrendMatch(Long userId, LocalDate date, List<SectorTrendDto> scores) {

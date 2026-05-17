@@ -150,7 +150,7 @@ public class SectorTrendAnalysisService {
         List<SectorMaster> masters = sectorMasterRepository.findAllByOrderBySectorCodeAsc();
         List<SectorNewsScore> scores = sectorNewsScoreRepository.findByScoreDateOrderByTotalSectorScoreDesc(resolvedDate);
         if (scores.size() < masters.size() || hasInconsistentEmptyScores(scores)) {
-            return analyze(resolvedDate);
+            return List.of();
         }
 
         Map<String, SectorMaster> masterMap = masters.stream()
@@ -170,7 +170,7 @@ public class SectorTrendAnalysisService {
                 .filter(Objects::nonNull)
                 .sorted(Comparator.comparing(SectorTrendDto::totalSectorScore).reversed())
                 .toList();
-        return latest.size() == masters.size() ? latest : analyzeToday();
+        return latest.size() == masters.size() ? latest : List.of();
     }
 
     @Transactional
@@ -182,11 +182,8 @@ public class SectorTrendAnalysisService {
 
         return sectorNewsScoreRepository.findTopBySectorCodeOrderByScoreDateDesc(resolvedSectorCode)
                 .map(score -> toDto(master, score))
-                .orElseGet(() -> analyzeToday().stream()
-                        .filter(item -> item.sectorCode().equals(resolvedSectorCode))
-                        .findFirst()
-                        .orElseThrow(() -> new NotFoundException(ErrorCode.SECTOR_NOT_FOUND,
-                                "sector score not found for code " + resolvedSectorCode)));
+                .orElseThrow(() -> new NotFoundException(ErrorCode.SECTOR_NOT_FOUND,
+                        "sector score not found for code " + resolvedSectorCode));
     }
 
     public List<SectorTrendDto> getSectorTrend(String sectorCode, LocalDate from, LocalDate to) {

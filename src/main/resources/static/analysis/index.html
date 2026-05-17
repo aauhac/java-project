@@ -125,7 +125,7 @@
 
             renderScores(sectorScoresResponse.data || []);
             renderTrendMatch(sectorTrendMatchResponse.data);
-            renderExposure(sectorTrendMatchResponse.data?.exposures || []);
+            renderExposure(hasStoredTrendData(sectorTrendMatchResponse.data) ? (sectorTrendMatchResponse.data?.exposures || []) : []);
 
             statusHost.innerHTML = Layout.alert('분석 데이터 로딩이 완료되었습니다.', 'success');
         } catch (error) {
@@ -288,7 +288,7 @@
     function renderScores(scores) {
         const host = document.getElementById('sector-scoreboard');
         if (!scores.length) {
-            host.innerHTML = Layout.empty('섹터 점수 데이터가 없습니다.');
+            host.innerHTML = Layout.empty('저장된 섹터 동향 데이터가 없습니다. 동향 분석 버튼을 눌러주세요.');
             return;
         }
         host.innerHTML = scores.map(score => `
@@ -306,6 +306,10 @@
     function renderTrendMatch(diagnostic) {
         if (!diagnostic) {
             document.getElementById('diagnostic-cards').innerHTML = Layout.empty('포트폴리오 동향 일치도 데이터가 없습니다.');
+            return;
+        }
+        if ((diagnostic.message || '').includes('동향 분석 버튼')) {
+            document.getElementById('diagnostic-cards').innerHTML = Layout.empty(diagnostic.message);
             return;
         }
         document.getElementById('diagnostic-cards').innerHTML = `
@@ -396,7 +400,7 @@
             }
             renderScores(trendsResponse.data || []);
             renderTrendMatch(trendMatchResponse.data);
-            renderExposure(trendMatchResponse.data?.exposures || []);
+            renderExposure(hasStoredTrendData(trendMatchResponse.data) ? (trendMatchResponse.data?.exposures || []) : []);
             statusHost.innerHTML = Layout.alert(runAnalysis ? '섹터 동향 분석이 완료되었습니다.' : '날짜별 섹터 동향을 불러왔습니다.', 'success');
         } catch (error) {
             const message = runAnalysis
@@ -409,6 +413,10 @@
                 analyzeButton.disabled = false;
             }
         }
+    }
+
+    function hasStoredTrendData(diagnostic) {
+        return diagnostic && !(diagnostic.message || '').includes('동향 분석 버튼');
     }
 </script>
 </body>

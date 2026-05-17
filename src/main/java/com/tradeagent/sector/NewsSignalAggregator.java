@@ -16,11 +16,9 @@ import java.util.List;
 public class NewsSignalAggregator {
 
     private final NewsEventRepository newsEventRepository;
-    private final GdeltClient gdeltClient;
 
-    public NewsSignalAggregator(NewsEventRepository newsEventRepository, GdeltClient gdeltClient) {
+    public NewsSignalAggregator(NewsEventRepository newsEventRepository) {
         this.newsEventRepository = newsEventRepository;
-        this.gdeltClient = gdeltClient;
     }
 
     @Transactional
@@ -82,14 +80,7 @@ public class NewsSignalAggregator {
         LocalDate resolvedDate = date != null ? date : DateTimeUtil.today();
         LocalDateTime start = resolvedDate.atStartOfDay();
         LocalDateTime end = resolvedDate.atTime(LocalTime.MAX);
-        List<NewsEvent> existing = newsEventRepository.findBySectorCodeAndPublishedAtBetweenOrderByPublishedAtDesc(sectorCode, start, end);
-        if (!existing.isEmpty()) {
-            return existing;
-        }
-
-        List<NewsEvent> fetched = gdeltClient.fetchSectorNews(sectorCode, resolvedDate);
-        newsEventRepository.deleteBySectorCodeAndPublishedAtBetween(sectorCode, start, end);
-        return newsEventRepository.saveAll(fetched);
+        return newsEventRepository.findBySectorCodeAndPublishedAtBetweenOrderByPublishedAtDesc(sectorCode, start, end);
     }
 
     private BigDecimal historicalDailyAverage(String sectorCode, LocalDate date, int lookbackDays) {
