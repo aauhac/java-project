@@ -5,6 +5,7 @@ import com.tradeagent.common.ErrorCode;
 import com.tradeagent.common.ExternalApiException;
 import com.tradeagent.common.NotFoundException;
 import com.tradeagent.common.ValidationException;
+import com.tradeagent.config.GdeltProperties;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,12 +13,16 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -27,23 +32,36 @@ public class SectorTrendAnalysisService {
 
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
     private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-    private static final Map<String, List<String>> KEYWORDS_BY_SECTOR = Map.of(
-            "SEMI", List.of("semiconductor", "chip", "foundry", "gpu", "nvda", "amd", "tsm"),
-            "AIINF", List.of("ai", "infrastructure", "datacenter", "cloud", "compute", "msft", "amzn", "googl", "nvda"),
-            "EV", List.of("electric vehicle", "ev", "battery", "charging", "tsla", "rivn", "li"),
-            "BIO", List.of("biotech", "pharma", "drug", "trial", "fda", "mrna", "amgn", "gild")
+    private static final BigDecimal SIMILARITY_THRESHOLD = new BigDecimal("0.18");
+    private static final Map<String, List<String>> PROFILE_TERMS_BY_SECTOR = Map.of(
+            "SEMI", List.of("semiconductor", "chip", "foundry", "fab", "fabless", "gpu", "memory", "nvidia", "amd", "tsm", "asml"),
+            "AIINF", List.of("artificial intelligence", "ai", "infrastructure", "datacenter", "cloud", "compute", "server", "accelerator", "microsoft", "amazon", "google", "oracle"),
+            "EV", List.of("electric vehicle", "ev", "battery", "charging", "autonomous", "tesla", "rivian", "nio", "li auto", "byd"),
+            "BIO", List.of("biotech", "biopharma", "pharma", "drug", "trial", "fda", "therapy", "vaccine", "moderna", "amgen", "gilead")
     );
+    private static final List<String> EMBEDDING_VOCABULARY = PROFILE_TERMS_BY_SECTOR.values().stream()
+            .flatMap(Collection::stream)
+            .flatMap(term -> tokenize(term).stream())
+            .distinct()
+            .sorted()
+            .toList();
 
     private final SectorMasterRepository sectorMasterRepository;
     private final SectorNewsScoreRepository sectorNewsScoreRepository;
+    private final NewsEventRepository newsEventRepository;
     private final GdeltClient gdeltClient;
+    private final GdeltProperties gdeltProperties;
 
     public SectorTrendAnalysisService(SectorMasterRepository sectorMasterRepository,
                                       SectorNewsScoreRepository sectorNewsScoreRepository,
-                                      GdeltClient gdeltClient) {
+                                      NewsEventRepository newsEventRepository,
+                                      GdeltClient gdeltClient,
+                                      GdeltProperties gdeltProperties) {
         this.sectorMasterRepository = sectorMasterRepository;
         this.sectorNewsScoreRepository = sectorNewsScoreRepository;
+        this.newsEventRepository = newsEventRepository;
         this.gdeltClient = gdeltClient;
+        this.gdeltProperties = gdeltProperties;
     }
 
     @Transactional
@@ -54,30 +72,42 @@ public class SectorTrendAnalysisService {
     @Transactional
     public List<SectorTrendDto> analyze(LocalDate date) {
         LocalDate resolvedDate = resolveDate(date);
+        LocalDate fromDate = resolvedDate.minusDays(Math.max(gdeltProperties.getLookbackDays(), 0));
         List<SectorMaster> masters = sectorMasterRepository.findAllByOrderBySectorCodeAsc();
         Map<String, SectorMaster> masterMap = masters.stream()
                 .collect(Collectors.toMap(SectorMaster::getSectorCode, Function.identity()));
+        Map<String, SectorProfile> sectorProfiles = refreshSectorProfiles(masters);
+
+        List<NewsEvent> classifiedNews;
+        try {
+            classifiedNews = refreshClassifiedNews(fromDate, resolvedDate, sectorProfiles);
+        } catch (ExternalApiException ex) {
+            classifiedNews = newsEventRepository.findByPublishedAtBetweenOrderByPublishedAtDesc(
+                    fromDate.atStartOfDay(),
+                    resolvedDate.atTime(LocalTime.MAX)
+            );
+        }
+
+        if (classifiedNews.isEmpty()) {
+            List<SectorTrendDto> existing = loadExistingScores(masters, resolvedDate);
+            if (!existing.isEmpty()) {
+                return existing;
+            }
+        }
+
+        Map<String, List<NewsEvent>> newsBySector = classifiedNews.stream()
+                .filter(event -> masterMap.containsKey(event.getSectorCode()))
+                .collect(Collectors.groupingBy(NewsEvent::getSectorCode));
 
         List<AnalysisDraft> drafts = masters.stream()
-                .map(master -> fetchDraft(master, resolvedDate))
+                .map(master -> buildDraft(master.getSectorCode(), newsBySector.getOrDefault(master.getSectorCode(), List.of())))
                 .toList();
 
-        List<AnalysisDraft> freshDrafts = drafts.stream()
-                .filter(AnalysisDraft::fresh)
-                .toList();
-        Map<String, String> rankedStatus = assignStatuses(freshDrafts);
+        List<AnalysisDraft> scoredDrafts = scoreDrafts(drafts);
+        Map<String, String> statuses = assignStatuses(scoredDrafts);
 
         List<SectorTrendDto> trends = new ArrayList<>();
-        for (AnalysisDraft draft : drafts) {
-            if (!draft.fresh()) {
-                trends.add(toDto(masterMap.get(draft.sectorCode()), draft.existingScore()));
-                continue;
-            }
-
-            String status = draft.lockedStatus() != null
-                    ? draft.lockedStatus()
-                    : rankedStatus.getOrDefault(draft.sectorCode(), "NEUTRAL");
-
+        for (AnalysisDraft draft : scoredDrafts) {
             SectorNewsScore saved = upsert(
                     draft.sectorCode(),
                     resolvedDate,
@@ -87,7 +117,7 @@ public class SectorTrendAnalysisService {
                     draft.newsToneScore(),
                     draft.keywordStrengthScore(),
                     draft.totalSectorScore(),
-                    status,
+                    statuses.getOrDefault(draft.sectorCode(), "NEUTRAL"),
                     draft.analyzedAt()
             );
             trends.add(toDto(masterMap.get(draft.sectorCode()), saved));
@@ -121,7 +151,7 @@ public class SectorTrendAnalysisService {
                 .map(master -> sectorNewsScoreRepository.findTopBySectorCodeOrderByScoreDateDesc(master.getSectorCode())
                         .map(score -> toDto(master, score))
                         .orElse(null))
-                .filter(item -> item != null)
+                .filter(Objects::nonNull)
                 .sorted(Comparator.comparing(SectorTrendDto::totalSectorScore).reversed())
                 .toList();
         return latest.size() == masters.size() ? latest : analyzeToday();
@@ -164,75 +194,160 @@ public class SectorTrendAnalysisService {
                 .toList();
     }
 
-    private AnalysisDraft fetchDraft(SectorMaster master, LocalDate date) {
-        try {
-            List<NewsEvent> events = gdeltClient.fetchSectorNews(master.getSectorCode(), date);
-            return freshDraft(master.getSectorCode(), events);
-        } catch (ExternalApiException ex) {
-            return sectorNewsScoreRepository.findBySectorCodeAndScoreDate(master.getSectorCode(), date)
-                    .map(score -> AnalysisDraft.fromExisting(master.getSectorCode(), score))
-                    .orElseGet(() -> AnalysisDraft.zero(master.getSectorCode(), LocalDateTime.now()));
+    private List<NewsEvent> refreshClassifiedNews(LocalDate fromDate,
+                                                  LocalDate toDate,
+                                                  Map<String, SectorProfile> sectorProfiles) {
+        List<NewsEvent> fetched = gdeltClient.fetchMarketNews(fromDate, toDate);
+        Map<String, NewsEvent> deduped = new LinkedHashMap<>();
+
+        for (NewsEvent event : fetched) {
+            ArticleClassification classification = classify(event, sectorProfiles);
+            if (classification == null) {
+                continue;
+            }
+
+            NewsEvent classified = new NewsEvent(
+                    classification.sectorCode(),
+                    event.getSymbol(),
+                    event.getTitle(),
+                    event.getSource(),
+                    event.getUrl(),
+                    event.getToneScore(),
+                    event.getPublishedAt(),
+                    classification.similarityScore(),
+                    classification.embeddingVector()
+            );
+
+            String key = dedupeKey(classified);
+            NewsEvent existing = deduped.get(key);
+            if (existing == null || classified.getSimilarityScore().compareTo(existing.getSimilarityScore()) > 0) {
+                deduped.put(key, classified);
+            }
         }
+
+        LocalDateTime start = fromDate.atStartOfDay();
+        LocalDateTime end = toDate.atTime(LocalTime.MAX);
+        newsEventRepository.deleteByPublishedAtBetween(start, end);
+        if (deduped.isEmpty()) {
+            return List.of();
+        }
+        return newsEventRepository.saveAll(new ArrayList<>(deduped.values()));
     }
 
-    private AnalysisDraft freshDraft(String sectorCode, List<NewsEvent> events) {
+    private ArticleClassification classify(NewsEvent event, Map<String, SectorProfile> sectorProfiles) {
+        double[] articleVector = buildEmbeddingVector(event.getTitle());
+        if (isZeroVector(articleVector)) {
+            return null;
+        }
+
+        String bestSector = null;
+        double bestScore = -1;
+        for (SectorProfile profile : sectorProfiles.values()) {
+            double similarity = cosineSimilarity(articleVector, profile.vector());
+            if (similarity > bestScore) {
+                bestScore = similarity;
+                bestSector = profile.sectorCode();
+            }
+        }
+
+        BigDecimal similarityScore = BigDecimal.valueOf(bestScore).setScale(4, RoundingMode.HALF_UP);
+        if (bestSector == null || similarityScore.compareTo(SIMILARITY_THRESHOLD) < 0) {
+            return null;
+        }
+
+        return new ArticleClassification(bestSector, similarityScore, serializeVector(articleVector));
+    }
+
+    private Map<String, SectorProfile> refreshSectorProfiles(List<SectorMaster> masters) {
+        List<SectorMaster> changed = new ArrayList<>();
+        Map<String, SectorProfile> profiles = new HashMap<>();
+
+        for (SectorMaster master : masters) {
+            String profileText = buildProfileText(master);
+            String embeddingVector = serializeVector(buildEmbeddingVector(profileText));
+            if (!profileText.equals(master.getProfileText()) || !embeddingVector.equals(master.getEmbeddingVector())) {
+                master.updateEmbedding(profileText, embeddingVector);
+                changed.add(master);
+            }
+            profiles.put(master.getSectorCode(), new SectorProfile(master.getSectorCode(), profileText, deserializeVector(embeddingVector)));
+        }
+
+        if (!changed.isEmpty()) {
+            sectorMasterRepository.saveAll(changed);
+        }
+        return profiles;
+    }
+
+    private String buildProfileText(SectorMaster master) {
+        List<String> terms = PROFILE_TERMS_BY_SECTOR.getOrDefault(master.getSectorCode(), List.of(master.getSectorCode().toLowerCase(Locale.ROOT)));
+        return (master.getSectorName() + " " + master.getDescription() + " " + String.join(" ", terms) + " " + String.join(" ", terms))
+                .toLowerCase(Locale.ROOT);
+    }
+
+    private AnalysisDraft buildDraft(String sectorCode, List<NewsEvent> events) {
         int articleCount = events.size();
-        BigDecimal avgTone = averageTone(events);
-        BigDecimal keywordStrength = calculateKeywordStrengthScore(sectorCode, events);
+        BigDecimal avgToneScore = averageTone(events);
+        BigDecimal newsToneScore = calculateNewsToneScore(avgToneScore);
+        BigDecimal relevanceScore = averageSimilarity(events);
+        LocalDateTime analyzedAt = events.stream()
+                .map(NewsEvent::getPublishedAt)
+                .max(LocalDateTime::compareTo)
+                .orElse(LocalDateTime.now());
         return new AnalysisDraft(
                 sectorCode,
                 articleCount,
-                avgTone,
+                avgToneScore,
                 ZERO,
-                calculateNewsToneScore(avgTone),
-                keywordStrength,
+                newsToneScore,
+                relevanceScore,
                 ZERO,
-                null,
-                LocalDateTime.now(),
-                true,
-                null
+                analyzedAt
         );
     }
 
-    private Map<String, String> assignStatuses(List<AnalysisDraft> freshDrafts) {
-        if (freshDrafts.isEmpty()) {
-            return Map.of();
-        }
-
-        int maxArticleCount = freshDrafts.stream()
+    private List<AnalysisDraft> scoreDrafts(List<AnalysisDraft> drafts) {
+        int maxArticleCount = drafts.stream()
                 .mapToInt(AnalysisDraft::articleCount)
                 .max()
                 .orElse(0);
 
-        List<AnalysisDraft> scored = freshDrafts.stream()
-                .map(draft -> draft.withScores(
-                        calculateNewsVolumeScore(draft.articleCount(), maxArticleCount),
-                        draft.newsToneScore(),
-                        calculateTotalScore(
-                                calculateNewsVolumeScore(draft.articleCount(), maxArticleCount),
-                                draft.newsToneScore(),
-                                draft.keywordStrengthScore()
-                        )
-                ))
+        return drafts.stream()
+                .map(draft -> {
+                    BigDecimal volumeScore = calculateNewsVolumeScore(draft.articleCount(), maxArticleCount);
+                    BigDecimal totalScore = calculateTotalScore(volumeScore, draft.newsToneScore(), draft.keywordStrengthScore());
+                    return draft.withScores(volumeScore, totalScore);
+                })
                 .sorted(Comparator.comparing(AnalysisDraft::totalSectorScore).reversed())
                 .toList();
+    }
 
-        if (scored.stream().map(AnalysisDraft::totalSectorScore).distinct().count() <= 1) {
-            return scored.stream().collect(Collectors.toMap(AnalysisDraft::sectorCode, ignored -> "NEUTRAL"));
+    private List<SectorTrendDto> loadExistingScores(List<SectorMaster> masters, LocalDate scoreDate) {
+        List<SectorTrendDto> existing = masters.stream()
+                .map(master -> sectorNewsScoreRepository.findBySectorCodeAndScoreDate(master.getSectorCode(), scoreDate)
+                        .map(score -> toDto(master, score))
+                        .orElse(null))
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparing(SectorTrendDto::totalSectorScore).reversed())
+                .toList();
+        return existing.size() == masters.size() ? existing : List.of();
+    }
+
+    private Map<String, String> assignStatuses(List<AnalysisDraft> drafts) {
+        if (drafts.isEmpty()) {
+            return Map.of();
+        }
+        if (drafts.stream().map(AnalysisDraft::totalSectorScore).distinct().count() <= 1) {
+            return drafts.stream().collect(Collectors.toMap(AnalysisDraft::sectorCode, ignored -> "NEUTRAL"));
         }
 
         Map<String, String> statuses = new HashMap<>();
-        for (int index = 0; index < Math.min(2, scored.size()); index++) {
-            statuses.put(scored.get(index).sectorCode(), "STRONG");
+        for (int index = 0; index < Math.min(2, drafts.size()); index++) {
+            statuses.put(drafts.get(index).sectorCode(), "STRONG");
         }
-        for (int index = Math.max(scored.size() - 2, 0); index < scored.size(); index++) {
-            statuses.putIfAbsent(scored.get(index).sectorCode(), "WEAK");
+        for (int index = Math.max(drafts.size() - 2, 0); index < drafts.size(); index++) {
+            statuses.putIfAbsent(drafts.get(index).sectorCode(), "WEAK");
         }
-        scored.forEach(draft -> statuses.putIfAbsent(draft.sectorCode(), "NEUTRAL"));
-        freshDrafts.forEach(draft -> draft.applyComputedScores(scored.stream()
-                .filter(item -> item.sectorCode().equals(draft.sectorCode()))
-                .findFirst()
-                .orElse(draft)));
+        drafts.forEach(draft -> statuses.putIfAbsent(draft.sectorCode(), "NEUTRAL"));
         return statuses;
     }
 
@@ -304,29 +419,16 @@ public class SectorTrendAnalysisService {
                 .divide(BigDecimal.valueOf(events.size()), 4, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal calculateKeywordStrengthScore(String sectorCode, List<NewsEvent> events) {
+    private BigDecimal averageSimilarity(List<NewsEvent> events) {
         if (events.isEmpty()) {
             return ZERO;
         }
-
-        List<String> keywords = KEYWORDS_BY_SECTOR.getOrDefault(sectorCode, List.of(sectorCode.toLowerCase(Locale.ROOT)));
-        int matches = 0;
-        int maxMatches = events.size() * keywords.size();
-        for (NewsEvent event : events) {
-            String content = (event.getTitle() + " " + event.getSource()).toLowerCase(Locale.ROOT);
-            for (String keyword : keywords) {
-                if (content.contains(keyword.toLowerCase(Locale.ROOT))) {
-                    matches++;
-                }
-            }
-        }
-        if (maxMatches == 0) {
-            return ZERO;
-        }
-        return BigDecimal.valueOf(matches)
+        return events.stream()
+                .map(NewsEvent::getSimilarityScore)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .divide(BigDecimal.valueOf(events.size()), 4, RoundingMode.HALF_UP)
                 .multiply(HUNDRED)
-                .divide(BigDecimal.valueOf(maxMatches), 2, RoundingMode.HALF_UP)
-                .min(HUNDRED);
+                .setScale(2, RoundingMode.HALF_UP);
     }
 
     private BigDecimal calculateNewsVolumeScore(int articleCount, int maxArticleCount) {
@@ -340,7 +442,7 @@ public class SectorTrendAnalysisService {
     }
 
     private BigDecimal calculateNewsToneScore(BigDecimal avgToneScore) {
-        BigDecimal score = BigDecimal.valueOf(50).add(avgToneScore.multiply(BigDecimal.TEN));
+        BigDecimal score = BigDecimal.valueOf(50).add(avgToneScore.multiply(BigDecimal.valueOf(5)));
         if (score.compareTo(HUNDRED) > 0) {
             return HUNDRED.setScale(2, RoundingMode.HALF_UP);
         }
@@ -350,76 +452,104 @@ public class SectorTrendAnalysisService {
         return score.setScale(2, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal calculateTotalScore(BigDecimal newsVolumeScore, BigDecimal newsToneScore, BigDecimal keywordStrengthScore) {
-        return newsVolumeScore.multiply(BigDecimal.valueOf(0.5))
-                .add(newsToneScore.multiply(BigDecimal.valueOf(0.3)))
-                .add(keywordStrengthScore.multiply(BigDecimal.valueOf(0.2)))
+    private BigDecimal calculateTotalScore(BigDecimal newsVolumeScore, BigDecimal newsToneScore, BigDecimal relevanceScore) {
+        return newsVolumeScore.multiply(BigDecimal.valueOf(0.40))
+                .add(newsToneScore.multiply(BigDecimal.valueOf(0.35)))
+                .add(relevanceScore.multiply(BigDecimal.valueOf(0.25)))
                 .setScale(2, RoundingMode.HALF_UP);
     }
 
-    private static final class AnalysisDraft {
-        private final String sectorCode;
-        private final Integer articleCount;
-        private final BigDecimal avgToneScore;
-        private BigDecimal newsVolumeScore;
-        private final BigDecimal newsToneScore;
-        private final BigDecimal keywordStrengthScore;
-        private BigDecimal totalSectorScore;
-        private final String lockedStatus;
-        private final LocalDateTime analyzedAt;
-        private final boolean fresh;
-        private final SectorNewsScore existingScore;
+    private String dedupeKey(NewsEvent event) {
+        if (event.getUrl() != null && !event.getUrl().isBlank()) {
+            return event.getUrl().trim().toLowerCase(Locale.ROOT);
+        }
+        return (event.getTitle() + "|" + event.getSource() + "|" + event.getPublishedAt()).toLowerCase(Locale.ROOT);
+    }
 
-        private AnalysisDraft(String sectorCode, Integer articleCount, BigDecimal avgToneScore,
-                              BigDecimal newsVolumeScore, BigDecimal newsToneScore, BigDecimal keywordStrengthScore,
-                              BigDecimal totalSectorScore, String lockedStatus, LocalDateTime analyzedAt,
-                              boolean fresh, SectorNewsScore existingScore) {
-            this.sectorCode = sectorCode;
-            this.articleCount = articleCount;
-            this.avgToneScore = avgToneScore;
-            this.newsVolumeScore = newsVolumeScore;
-            this.newsToneScore = newsToneScore;
-            this.keywordStrengthScore = keywordStrengthScore;
-            this.totalSectorScore = totalSectorScore;
-            this.lockedStatus = lockedStatus;
-            this.analyzedAt = analyzedAt;
-            this.fresh = fresh;
-            this.existingScore = existingScore;
+    private double[] buildEmbeddingVector(String text) {
+        double[] vector = new double[EMBEDDING_VOCABULARY.size()];
+        if (text == null || text.isBlank()) {
+            return vector;
         }
 
-        private static AnalysisDraft fromExisting(String sectorCode, SectorNewsScore score) {
-            return new AnalysisDraft(
-                    sectorCode,
-                    score.getArticleCount(),
-                    score.getAvgToneScore(),
-                    score.getNewsVolumeScore(),
-                    score.getNewsToneScore(),
-                    score.getKeywordStrengthScore(),
-                    score.getTotalSectorScore(),
-                    score.getStatus(),
-                    score.getAnalyzedAt(),
-                    false,
-                    score
-            );
+        Map<String, Long> frequencies = tokenize(text).stream()
+                .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
+        for (int index = 0; index < EMBEDDING_VOCABULARY.size(); index++) {
+            vector[index] = frequencies.getOrDefault(EMBEDDING_VOCABULARY.get(index), 0L);
         }
 
-        private static AnalysisDraft zero(String sectorCode, LocalDateTime analyzedAt) {
-            return new AnalysisDraft(
-                    sectorCode,
-                    0,
-                    BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP),
-                    ZERO,
-                    ZERO,
-                    ZERO,
-                    ZERO,
-                    "NEUTRAL",
-                    analyzedAt,
-                    true,
-                    null
-            );
+        double magnitude = Math.sqrt(java.util.Arrays.stream(vector).map(value -> value * value).sum());
+        if (magnitude == 0) {
+            return vector;
+        }
+        for (int index = 0; index < vector.length; index++) {
+            vector[index] = vector[index] / magnitude;
+        }
+        return vector;
+    }
+
+    private static List<String> tokenize(String text) {
+        if (text == null || text.isBlank()) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(text.toLowerCase(Locale.ROOT).split("[^a-z0-9]+"))
+                .filter(token -> !token.isBlank())
+                .toList();
+    }
+
+    private boolean isZeroVector(double[] vector) {
+        return java.util.Arrays.stream(vector).allMatch(value -> value == 0);
+    }
+
+    private double cosineSimilarity(double[] left, double[] right) {
+        double total = 0;
+        for (int index = 0; index < left.length; index++) {
+            total += left[index] * right[index];
+        }
+        return total;
+    }
+
+    private String serializeVector(double[] vector) {
+        StringBuilder builder = new StringBuilder();
+        for (int index = 0; index < vector.length; index++) {
+            if (index > 0) {
+                builder.append(',');
+            }
+            builder.append(String.format(Locale.ROOT, "%.4f", vector[index]));
+        }
+        return builder.toString();
+    }
+
+    private double[] deserializeVector(String serialized) {
+        if (serialized == null || serialized.isBlank()) {
+            return new double[EMBEDDING_VOCABULARY.size()];
         }
 
-        private AnalysisDraft withScores(BigDecimal newsVolumeScore, BigDecimal newsToneScore, BigDecimal totalSectorScore) {
+        String[] parts = serialized.split(",");
+        double[] vector = new double[EMBEDDING_VOCABULARY.size()];
+        for (int index = 0; index < Math.min(parts.length, vector.length); index++) {
+            vector[index] = Double.parseDouble(parts[index]);
+        }
+        return vector;
+    }
+
+    private record SectorProfile(String sectorCode, String profileText, double[] vector) {
+    }
+
+    private record ArticleClassification(String sectorCode, BigDecimal similarityScore, String embeddingVector) {
+    }
+
+    private record AnalysisDraft(
+            String sectorCode,
+            Integer articleCount,
+            BigDecimal avgToneScore,
+            BigDecimal newsVolumeScore,
+            BigDecimal newsToneScore,
+            BigDecimal keywordStrengthScore,
+            BigDecimal totalSectorScore,
+            LocalDateTime analyzedAt
+    ) {
+        private AnalysisDraft withScores(BigDecimal newsVolumeScore, BigDecimal totalSectorScore) {
             return new AnalysisDraft(
                     sectorCode,
                     articleCount,
@@ -428,60 +558,8 @@ public class SectorTrendAnalysisService {
                     newsToneScore,
                     keywordStrengthScore,
                     totalSectorScore,
-                    lockedStatus,
-                    analyzedAt,
-                    fresh,
-                    existingScore
+                    analyzedAt
             );
-        }
-
-        private void applyComputedScores(AnalysisDraft scored) {
-            this.newsVolumeScore = scored.newsVolumeScore;
-            this.totalSectorScore = scored.totalSectorScore;
-        }
-
-        private String sectorCode() {
-            return sectorCode;
-        }
-
-        private Integer articleCount() {
-            return articleCount;
-        }
-
-        private BigDecimal avgToneScore() {
-            return avgToneScore;
-        }
-
-        private BigDecimal newsVolumeScore() {
-            return newsVolumeScore;
-        }
-
-        private BigDecimal newsToneScore() {
-            return newsToneScore;
-        }
-
-        private BigDecimal keywordStrengthScore() {
-            return keywordStrengthScore;
-        }
-
-        private BigDecimal totalSectorScore() {
-            return totalSectorScore;
-        }
-
-        private String lockedStatus() {
-            return lockedStatus;
-        }
-
-        private LocalDateTime analyzedAt() {
-            return analyzedAt;
-        }
-
-        private boolean fresh() {
-            return fresh;
-        }
-
-        private SectorNewsScore existingScore() {
-            return existingScore;
         }
     }
 }

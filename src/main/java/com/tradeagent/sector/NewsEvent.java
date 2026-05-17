@@ -36,6 +36,12 @@ public class NewsEvent extends BaseEntity {
     @Column(name = "tone_score", nullable = false, precision = 6, scale = 2)
     private BigDecimal toneScore;
 
+    @Column(name = "similarity_score", nullable = false, precision = 8, scale = 4)
+    private BigDecimal similarityScore;
+
+    @Column(name = "embedding_vector", nullable = false, length = 4000)
+    private String embeddingVector;
+
     @Column(name = "published_at", nullable = false)
     private LocalDateTime publishedAt;
 
@@ -44,12 +50,19 @@ public class NewsEvent extends BaseEntity {
 
     public NewsEvent(String sectorCode, String symbol, String title, String source, String url,
                      BigDecimal toneScore, LocalDateTime publishedAt) {
+        this(sectorCode, symbol, title, source, url, toneScore, publishedAt, BigDecimal.ZERO.setScale(4), "");
+    }
+
+    public NewsEvent(String sectorCode, String symbol, String title, String source, String url,
+                     BigDecimal toneScore, LocalDateTime publishedAt, BigDecimal similarityScore, String embeddingVector) {
         this.sectorCode = sectorCode;
         this.symbol = symbol;
         this.title = title;
         this.source = source;
         this.url = url;
         this.toneScore = toneScore;
+        this.similarityScore = similarityScore;
+        this.embeddingVector = embeddingVector;
         this.publishedAt = publishedAt;
     }
 
@@ -75,6 +88,14 @@ public class NewsEvent extends BaseEntity {
 
     public BigDecimal getToneScore() {
         return toneScore;
+    }
+
+    public BigDecimal getSimilarityScore() {
+        return similarityScore;
+    }
+
+    public String getEmbeddingVector() {
+        return embeddingVector;
     }
 
     public LocalDateTime getPublishedAt() {

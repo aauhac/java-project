@@ -28,6 +28,12 @@ public class SectorMaster extends BaseEntity {
     @Column(nullable = false, length = 500)
     private String description;
 
+    @Column(name = "profile_text", nullable = false, length = 2000)
+    private String profileText;
+
+    @Column(name = "embedding_vector", nullable = false, length = 4000)
+    private String embeddingVector;
+
     protected SectorMaster() {
     }
 
@@ -35,6 +41,8 @@ public class SectorMaster extends BaseEntity {
         this.sectorCode = sectorCode;
         this.sectorName = sectorName;
         this.description = description;
+        this.profileText = "";
+        this.embeddingVector = "";
     }
 
     public String getSectorCode() {
@@ -47,5 +55,18 @@ public class SectorMaster extends BaseEntity {
 
     public String getDescription() {
         return description;
+    }
+
+    public String getProfileText() {
+        return profileText;
+    }
+
+    public String getEmbeddingVector() {
+        return embeddingVector;
+    }
+
+    public void updateEmbedding(String profileText, String embeddingVector) {
+        this.profileText = profileText;
+        this.embeddingVector = embeddingVector;
     }
 }

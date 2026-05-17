@@ -24,24 +24,31 @@ public class SectorScoreSchemaInitializer implements ApplicationRunner {
     @Override
     public void run(org.springframework.boot.ApplicationArguments args) throws Exception {
         try (Connection connection = dataSource.getConnection()) {
-            if (!hasSectorScoreTable(connection)) {
-                return;
-            }
-
             try (Statement statement = connection.createStatement()) {
-                statement.execute("ALTER TABLE sector_score ADD COLUMN IF NOT EXISTS article_count INT DEFAULT 0 NOT NULL");
-                statement.execute("ALTER TABLE sector_score ADD COLUMN IF NOT EXISTS avg_tone_score DECIMAL(10,4) DEFAULT 0 NOT NULL");
-                statement.execute("ALTER TABLE sector_score ADD COLUMN IF NOT EXISTS keyword_strength_score DECIMAL(6,2) DEFAULT 0 NOT NULL");
-                statement.execute("ALTER TABLE sector_score ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'NEUTRAL' NOT NULL");
-                statement.execute("ALTER TABLE sector_score ADD COLUMN IF NOT EXISTS analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL");
-            }
+                if (hasTable(connection, "SECTOR_SCORE")) {
+                    statement.execute("ALTER TABLE sector_score ADD COLUMN IF NOT EXISTS article_count INT DEFAULT 0 NOT NULL");
+                    statement.execute("ALTER TABLE sector_score ADD COLUMN IF NOT EXISTS avg_tone_score DECIMAL(10,4) DEFAULT 0 NOT NULL");
+                    statement.execute("ALTER TABLE sector_score ADD COLUMN IF NOT EXISTS keyword_strength_score DECIMAL(6,2) DEFAULT 0 NOT NULL");
+                    statement.execute("ALTER TABLE sector_score ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'NEUTRAL' NOT NULL");
+                    statement.execute("ALTER TABLE sector_score ADD COLUMN IF NOT EXISTS analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL");
+                }
 
-            log.info("sector_score schema checked");
+                if (hasTable(connection, "NEWS_EVENT")) {
+                    statement.execute("ALTER TABLE news_event ADD COLUMN IF NOT EXISTS similarity_score DECIMAL(8,4) DEFAULT 0 NOT NULL");
+                    statement.execute("ALTER TABLE news_event ADD COLUMN IF NOT EXISTS embedding_vector VARCHAR(4000) DEFAULT '' NOT NULL");
+                }
+
+                if (hasTable(connection, "SECTOR_MASTER")) {
+                    statement.execute("ALTER TABLE sector_master ADD COLUMN IF NOT EXISTS profile_text VARCHAR(2000) DEFAULT '' NOT NULL");
+                    statement.execute("ALTER TABLE sector_master ADD COLUMN IF NOT EXISTS embedding_vector VARCHAR(4000) DEFAULT '' NOT NULL");
+                }
+            }
+            log.info("sector schema checked");
         }
     }
 
-    private boolean hasSectorScoreTable(Connection connection) throws Exception {
-        try (ResultSet tables = connection.getMetaData().getTables(null, null, "SECTOR_SCORE", null)) {
+    private boolean hasTable(Connection connection, String tableName) throws Exception {
+        try (ResultSet tables = connection.getMetaData().getTables(null, null, tableName, null)) {
             return tables.next();
         }
     }

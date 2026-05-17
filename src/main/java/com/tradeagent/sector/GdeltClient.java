@@ -16,6 +16,7 @@ import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
@@ -24,13 +25,20 @@ import java.util.Map;
 @Component
 public class GdeltClient {
 
-    private static final DateTimeFormatter GDELT_SEEN_DATE = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+    private static final DateTimeFormatter GDELT_DATE_TIME = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
     private static final Map<String, String> QUERY_BY_SECTOR = Map.of(
-            "SEMI", "\"semiconductor\" OR chip OR foundry OR NVDA OR AMD OR TSM",
-            "AIINF", "\"AI infrastructure\" OR datacenter OR cloud AI OR NVDA OR MSFT OR AMZN",
-            "EV", "\"electric vehicle\" OR EV OR battery OR TSLA OR RIVN OR LI",
-            "BIO", "biotech OR pharma OR drug OR MRNA OR AMGN OR GILD"
+            "SEMI", "\"semiconductor\" OR chip OR foundry OR gpu OR NVDA OR AMD OR TSM OR NVIDIA",
+            "AIINF", "\"AI infrastructure\" OR datacenter OR cloud OR compute OR NVDA OR MSFT OR AMZN OR GOOGL OR NVIDIA",
+            "EV", "\"electric vehicle\" OR battery OR charging OR TSLA OR RIVN OR LI OR Tesla",
+            "BIO", "biotech OR biopharma OR pharma OR drug OR trial OR FDA OR MRNA OR AMGN OR GILD OR Moderna"
     );
+    private static final String BROAD_MARKET_QUERY =
+            "\"semiconductor\" OR chip OR foundry OR gpu OR " +
+            "\"AI infrastructure\" OR datacenter OR cloud OR compute OR \"artificial intelligence\" OR " +
+            "\"electric vehicle\" OR battery OR charging OR " +
+            "biotech OR biopharma OR pharma OR drug OR trial OR FDA OR " +
+            "NVDA OR AMD OR TSM OR NVIDIA OR MSFT OR AMZN OR GOOGL OR " +
+            "TSLA OR RIVN OR LI OR Tesla OR MRNA OR AMGN OR GILD OR Moderna";
 
     private final WebClient webClient;
     private final GdeltProperties gdeltProperties;
@@ -50,40 +58,61 @@ public class GdeltClient {
     public List<NewsEvent> fetchSectorNews(String sectorCode, LocalDate date) {
         String resolvedSectorCode = normalizeSectorCode(sectorCode);
         LocalDate resolvedDate = date != null ? date : LocalDate.now();
+        return requestArticles(buildSectorQuery(resolvedSectorCode), resolvedDate, resolvedDate, 20).stream()
+                .map(article -> toNewsEvent(article, resolvedSectorCode, resolvedDate))
+                .toList();
+    }
+
+    public List<NewsEvent> fetchMarketNews(LocalDate from, LocalDate to) {
+        LocalDate resolvedFrom = from != null ? from : LocalDate.now().minusDays(gdeltProperties.getLookbackDays());
+        LocalDate resolvedTo = to != null ? to : LocalDate.now();
+        if (resolvedFrom.isAfter(resolvedTo)) {
+            throw new ValidationException(ErrorCode.INVALID_INPUT, "from must be on or before to");
+        }
+
+        return requestArticles(BROAD_MARKET_QUERY, resolvedFrom, resolvedTo, gdeltProperties.getMaxRecords()).stream()
+                .map(article -> toNewsEvent(article, "UNCLASSIFIED", resolvedTo))
+                .toList();
+    }
+
+    private List<GdeltArticle> requestArticles(String query, LocalDate from, LocalDate to, int maxRecords) {
         try {
             GdeltDocResponse response = webClient.get()
                     .uri(uriBuilder -> uriBuilder.path("/doc/doc")
-                            .queryParam("query", buildQuery(resolvedSectorCode))
+                            .queryParam("query", query)
                             .queryParam("mode", "ArtList")
-                            .queryParam("maxrecords", 10)
+                            .queryParam("maxrecords", maxRecords)
                             .queryParam("format", "json")
                             .queryParam("sort", "datedesc")
+                            .queryParam("startdatetime", formatDateTime(from.atStartOfDay()))
+                            .queryParam("enddatetime", formatDateTime(to.atTime(LocalTime.MAX)))
                             .build())
                     .retrieve()
                     .bodyToMono(GdeltDocResponse.class)
                     .block(Duration.ofSeconds(gdeltProperties.getTimeoutSeconds()));
 
-            if (response == null || response.articles() == null || response.articles().isEmpty()) {
+            if (response == null || response.articles() == null) {
                 return List.of();
             }
-
-            return response.articles().stream()
-                    .map(article -> new NewsEvent(
-                            resolvedSectorCode,
-                            inferSymbol(article.title(), resolvedSectorCode),
-                            defaultText(article.title(), resolvedSectorCode + " sector update"),
-                            defaultText(article.domain(), "GDELT"),
-                            defaultText(article.url(), "https://www.gdeltproject.org"),
-                            estimateTone(article.title()),
-                            parseSeenDate(article.seendate(), resolvedDate)
-                    ))
-                    .toList();
+            return response.articles();
         } catch (WebClientResponseException ex) {
             throw new ExternalApiException(ErrorCode.GDELT_API_ERROR,
                     "GDELT request failed with status " + ex.getStatusCode().value());
         } catch (RuntimeException ex) {
             throw new ExternalApiException(ErrorCode.GDELT_API_ERROR, "GDELT request failed");
         }
+    }
+
+    private NewsEvent toNewsEvent(GdeltArticle article, String sectorCode, LocalDate fallbackDate) {
+        return new NewsEvent(
+                sectorCode,
+                inferSymbol(article.title()),
+                defaultText(article.title(), sectorCode + " sector update"),
+                defaultText(article.domain(), "GDELT"),
+                defaultText(article.url(), "https://www.gdeltproject.org"),
+                estimateTone(article.title()),
+                parseSeenDate(article.seendate(), fallbackDate)
+        );
     }
 
     private String normalizeBaseUrl(String baseUrl) {
@@ -100,19 +129,13 @@ public class GdeltClient {
         return sectorCode.trim().toUpperCase(Locale.ROOT);
     }
 
-    private String buildQuery(String sectorCode) {
+    private String buildSectorQuery(String sectorCode) {
         return QUERY_BY_SECTOR.getOrDefault(sectorCode, sectorCode);
     }
 
-    private String inferSymbol(String title, String sectorCode) {
+    private String inferSymbol(String title) {
         if (!StringUtils.hasText(title)) {
-            return switch (sectorCode) {
-                case "SEMI" -> "NVDA";
-                case "AIINF" -> "MSFT";
-                case "EV" -> "TSLA";
-                case "BIO" -> "MRNA";
-                default -> null;
-            };
+            return null;
         }
         String upperTitle = title.toUpperCase(Locale.ROOT);
         for (String symbol : List.of("NVDA", "AMD", "TSM", "SMH", "MSFT", "AMZN", "GOOGL", "TSLA", "RIVN", "LI", "MRNA", "AMGN", "GILD", "IBB")) {
@@ -177,10 +200,14 @@ public class GdeltClient {
             return fallbackDate.atStartOfDay();
         }
         try {
-            return LocalDateTime.parse(seendate, GDELT_SEEN_DATE);
+            return LocalDateTime.parse(seendate, GDELT_DATE_TIME);
         } catch (Exception ex) {
             return fallbackDate.atStartOfDay();
         }
+    }
+
+    private String formatDateTime(LocalDateTime value) {
+        return value.format(GDELT_DATE_TIME);
     }
 
     private String defaultText(String value, String fallback) {

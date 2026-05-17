@@ -10,8 +10,12 @@ public interface NewsEventRepository extends JpaRepository<NewsEvent, Long> {
     List<NewsEvent> findBySectorCodeOrderByPublishedAtDesc(String sectorCode);
 
     List<NewsEvent> findBySectorCodeAndPublishedAtBetweenOrderByPublishedAtDesc(String sectorCode,
-                                                                                LocalDateTime start,
-                                                                                LocalDateTime end);
+                                                                                 LocalDateTime start,
+                                                                                 LocalDateTime end);
+
+    List<NewsEvent> findByPublishedAtBetweenOrderByPublishedAtDesc(LocalDateTime start, LocalDateTime end);
 
     void deleteBySectorCodeAndPublishedAtBetween(String sectorCode, LocalDateTime start, LocalDateTime end);
+
+    void deleteByPublishedAtBetween(LocalDateTime start, LocalDateTime end);
 }
