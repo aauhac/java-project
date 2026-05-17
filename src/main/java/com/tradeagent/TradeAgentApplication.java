@@ -20,5 +20,4 @@ public class TradeAgentApplication {
     public static void main(String[] args) {
         SpringApplication.run(TradeAgentApplication.class, args);
     }
-
 }

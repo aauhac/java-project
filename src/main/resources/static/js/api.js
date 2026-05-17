@@ -96,6 +96,11 @@
                 method: 'POST'
             });
         },
+        analyzeSectorTrendForUser(userId = 1, date) {
+            return request(`/api/sectors/user/${userId}/analyze-trend${buildQuery({date})}`, {
+                method: 'POST'
+            });
+        },
         getSectorTrends(date) {
             return request(`/api/sectors/trends${buildQuery({date})}`);
         },

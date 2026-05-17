@@ -6,6 +6,7 @@ import com.tradeagent.sector.SectorApiModels.PortfolioSectorDiagnosticDto;
 import com.tradeagent.sector.SectorApiModels.PortfolioTrendMatchDto;
 import com.tradeagent.sector.SectorApiModels.SectorOptionDto;
 import com.tradeagent.sector.SectorApiModels.SectorScoreDto;
+import com.tradeagent.sector.SectorApiModels.TrendAnalysisResultDto;
 import com.tradeagent.sector.SectorApiModels.SectorTrendDto;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -65,7 +66,15 @@ public class SectorController {
 
     @PostMapping("/analyze-trend")
     public ApiResponse<List<SectorTrendDto>> analyzeTrend(@RequestParam(required = false) LocalDate date) {
-        return ApiResponse.ok(sectorTrendAnalysisService.analyze(date));
+        return ApiResponse.ok(sectorTrendAnalysisService.analyzeStrict(date));
+    }
+
+    @PostMapping("/user/{userId}/analyze-trend")
+    public ApiResponse<TrendAnalysisResultDto> analyzeTrendForUser(@PathVariable Long userId,
+                                                                   @RequestParam(required = false) LocalDate date) {
+        List<SectorTrendDto> trends = sectorTrendAnalysisService.analyzeStrict(date);
+        PortfolioTrendMatchDto trendMatch = portfolioSectorDiagnosticService.calculateTrendMatch(userId, date, trends);
+        return ApiResponse.ok(new TrendAnalysisResultDto(trends, trendMatch));
     }
 
     @GetMapping("/trends")

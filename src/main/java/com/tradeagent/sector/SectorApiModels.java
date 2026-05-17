@@ -82,4 +82,10 @@ public final class SectorApiModels {
             String sectorName
     ) {
     }
+
+    public record TrendAnalysisResultDto(
+            List<SectorTrendDto> trends,
+            PortfolioTrendMatchDto trendMatch
+    ) {
+    }
 }

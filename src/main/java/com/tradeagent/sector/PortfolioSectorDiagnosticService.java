@@ -60,7 +60,11 @@ public class PortfolioSectorDiagnosticService {
     }
 
     public PortfolioTrendMatchDto calculateTrendMatch(Long userId, LocalDate date) {
-        List<SectorExposureDto> exposures = getTrendExposureBreakdown(userId, sectorTrendAnalysisService.getTrendScores(date));
+        return calculateTrendMatch(userId, date, sectorTrendAnalysisService.getTrendScores(date));
+    }
+
+    public PortfolioTrendMatchDto calculateTrendMatch(Long userId, LocalDate date, List<SectorTrendDto> scores) {
+        List<SectorExposureDto> exposures = getTrendExposureBreakdown(userId, scores);
         BigDecimal strongExposure = sumExposureByStatus(exposures, "STRONG");
         BigDecimal weakExposure = sumExposureByStatus(exposures, "WEAK");
         BigDecimal trendMatchScore = exposures.stream()

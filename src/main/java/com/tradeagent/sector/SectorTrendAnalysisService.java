@@ -75,6 +75,15 @@ public class SectorTrendAnalysisService {
 
     @Transactional
     public List<SectorTrendDto> analyze(LocalDate date) {
+        return analyze(date, false);
+    }
+
+    @Transactional
+    public List<SectorTrendDto> analyzeStrict(LocalDate date) {
+        return analyze(date, true);
+    }
+
+    private List<SectorTrendDto> analyze(LocalDate date, boolean failOnFetchError) {
         LocalDate resolvedDate = resolveDate(date);
         LocalDate fromDate = resolvedDate.minusDays(Math.max(gdeltProperties.getLookbackDays(), 0));
         List<SectorMaster> masters = sectorMasterRepository.findAllByOrderBySectorCodeAsc();
@@ -86,6 +95,9 @@ public class SectorTrendAnalysisService {
         try {
             classifiedNews = refreshClassifiedNews(fromDate, resolvedDate, sectorProfiles);
         } catch (ExternalApiException ex) {
+            if (failOnFetchError) {
+                throw new ExternalApiException(ErrorCode.GDELT_API_ERROR, "호출에 실패했습니다. " + ex.getMessage());
+            }
             classifiedNews = newsEventRepository.findByPublishedAtBetweenOrderByPublishedAtDesc(
                     fromDate.atStartOfDay(),
                     resolvedDate.atTime(LocalTime.MAX)
@@ -94,7 +106,7 @@ public class SectorTrendAnalysisService {
 
         if (classifiedNews.isEmpty()) {
             List<SectorTrendDto> existing = loadExistingScores(masters, resolvedDate);
-            if (!existing.isEmpty()) {
+            if (!existing.isEmpty() && canReuseExistingScores(existing)) {
                 return existing;
             }
         }
@@ -137,7 +149,7 @@ public class SectorTrendAnalysisService {
         LocalDate resolvedDate = resolveDate(date);
         List<SectorMaster> masters = sectorMasterRepository.findAllByOrderBySectorCodeAsc();
         List<SectorNewsScore> scores = sectorNewsScoreRepository.findByScoreDateOrderByTotalSectorScoreDesc(resolvedDate);
-        if (scores.size() < masters.size()) {
+        if (scores.size() < masters.size() || hasInconsistentEmptyScores(scores)) {
             return analyze(resolvedDate);
         }
 
@@ -241,7 +253,7 @@ public class SectorTrendAnalysisService {
     private ArticleClassification classify(NewsEvent event, Map<String, SectorProfile> sectorProfiles) {
         double[] articleVector = buildEmbeddingVector(event.getTitle());
         if (isZeroVector(articleVector)) {
-            return null;
+            return classifyByKeywordFallback(event, sectorProfiles);
         }
 
         String bestSector = null;
@@ -256,7 +268,7 @@ public class SectorTrendAnalysisService {
 
         BigDecimal similarityScore = BigDecimal.valueOf(bestScore).setScale(4, RoundingMode.HALF_UP);
         if (bestSector == null || similarityScore.compareTo(SIMILARITY_THRESHOLD) < 0) {
-            return null;
+            return classifyByKeywordFallback(event, sectorProfiles);
         }
 
         return new ArticleClassification(bestSector, similarityScore, serializeVector(articleVector));
@@ -290,6 +302,18 @@ public class SectorTrendAnalysisService {
 
     private AnalysisDraft buildDraft(String sectorCode, List<NewsEvent> events) {
         int articleCount = events.size();
+        if (articleCount == 0) {
+            return new AnalysisDraft(
+                    sectorCode,
+                    0,
+                    BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP),
+                    ZERO,
+                    ZERO,
+                    ZERO,
+                    ZERO,
+                    LocalDateTime.now()
+            );
+        }
         BigDecimal avgToneScore = averageTone(events);
         BigDecimal newsToneScore = calculateNewsToneScore(avgToneScore);
         BigDecimal relevanceScore = averageSimilarity(events);
@@ -334,6 +358,23 @@ public class SectorTrendAnalysisService {
                 .sorted(Comparator.comparing(SectorTrendDto::totalSectorScore).reversed())
                 .toList();
         return existing.size() == masters.size() ? existing : List.of();
+    }
+
+    private boolean canReuseExistingScores(List<SectorTrendDto> scores) {
+        return scores.stream().allMatch(score ->
+                score.articleCount() > 0 || score.totalSectorScore().compareTo(ZERO) == 0
+        );
+    }
+
+    private boolean hasInconsistentEmptyScores(List<SectorNewsScore> scores) {
+        return scores.stream().anyMatch(score ->
+                score.getArticleCount() == 0 && (
+                        score.getNewsVolumeScore().compareTo(ZERO) != 0
+                                || score.getNewsToneScore().compareTo(ZERO) != 0
+                                || score.getKeywordStrengthScore().compareTo(ZERO) != 0
+                                || score.getTotalSectorScore().compareTo(ZERO) != 0
+                )
+        );
     }
 
     private Map<String, String> assignStatuses(List<AnalysisDraft> drafts) {
@@ -461,6 +502,35 @@ public class SectorTrendAnalysisService {
                 .add(newsToneScore.multiply(BigDecimal.valueOf(0.35)))
                 .add(relevanceScore.multiply(BigDecimal.valueOf(0.25)))
                 .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private ArticleClassification classifyByKeywordFallback(NewsEvent event, Map<String, SectorProfile> sectorProfiles) {
+        String normalizedTitle = event.getTitle() == null ? "" : event.getTitle().toLowerCase(Locale.ROOT);
+        String bestSector = null;
+        int bestHits = 0;
+
+        for (SectorProfile profile : sectorProfiles.values()) {
+            int hits = countProfileTermHits(normalizedTitle, profile.sectorCode());
+            if (hits > bestHits) {
+                bestHits = hits;
+                bestSector = profile.sectorCode();
+            }
+        }
+
+        if (bestSector == null || bestHits <= 0) {
+            return null;
+        }
+
+        BigDecimal fallbackScore = BigDecimal.valueOf(Math.min(0.99d, 0.20d + (bestHits * 0.12d)))
+                .setScale(4, RoundingMode.HALF_UP);
+        return new ArticleClassification(bestSector, fallbackScore, "");
+    }
+
+    private int countProfileTermHits(String normalizedTitle, String sectorCode) {
+        return PROFILE_TERMS_BY_SECTOR.getOrDefault(sectorCode, List.of()).stream()
+                .map(String::toLowerCase)
+                .mapToInt(term -> normalizedTitle.contains(term) ? 1 : 0)
+                .sum();
     }
 
     private String dedupeKey(NewsEvent event) {
