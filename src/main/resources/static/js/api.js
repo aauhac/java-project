@@ -8,8 +8,21 @@
             ...options
         });
 
-        const payload = await response.json().catch(() => null);
+        const raw = await response.text();
+        let payload = null;
+
+        if (raw) {
+            try {
+                payload = JSON.parse(raw);
+            } catch (_) {
+                payload = raw;
+            }
+        }
+
         if (!response.ok) {
+            if (payload && typeof payload === 'string') {
+                throw new Error(payload.trim());
+            }
             throw new Error(payload?.error?.message || `Request failed with status ${response.status}.`);
         }
         if (payload && payload.success === false) {

@@ -88,4 +88,14 @@ public final class SectorApiModels {
             PortfolioTrendMatchDto trendMatch
     ) {
     }
+
+    public record GdeltDebugResultDto(
+            String query,
+            LocalDate from,
+            LocalDate to,
+            int maxRecords,
+            int articleCount,
+            List<NewsEventDto> articles
+    ) {
+    }
 }

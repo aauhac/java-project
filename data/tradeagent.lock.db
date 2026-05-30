@@ -1,6 +1,6 @@
 #FileLock
-#Tue May 26 13:37:29 KST 2026
-hostName=DESKTOP-2IGJ482
-id=19e6292d1ee8dac53f2289672c8cfe642c52dcfd9a3
+#Sun May 31 04:22:21 KST 2026
+hostName=flebook
+id=19e7a565d7628f37e96c4d48cb0a3ec4cd478c0dd5d
 method=file
-server=192.168.63.79\:61673
+server=192.168.35.168\:57723

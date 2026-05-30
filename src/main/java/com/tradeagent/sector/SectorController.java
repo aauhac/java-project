@@ -3,6 +3,7 @@ package com.tradeagent.sector;
 import com.tradeagent.common.ApiResponse;
 import com.tradeagent.common.GdeltSupport;
 import com.tradeagent.sector.SectorApiModels.NewsEventDto;
+import com.tradeagent.sector.SectorApiModels.GdeltDebugResultDto;
 import com.tradeagent.sector.SectorApiModels.PortfolioSectorDiagnosticDto;
 import com.tradeagent.sector.SectorApiModels.PortfolioTrendMatchDto;
 import com.tradeagent.sector.SectorApiModels.SectorOptionDto;
@@ -27,15 +28,18 @@ public class SectorController {
     private final SectorAnalysisService sectorAnalysisService;
     private final SectorTrendAnalysisService sectorTrendAnalysisService;
     private final PortfolioSectorDiagnosticService portfolioSectorDiagnosticService;
+    private final GdeltClient gdeltClient;
     private final com.tradeagent.config.GdeltProperties gdeltProperties;
 
     public SectorController(SectorAnalysisService sectorAnalysisService,
                             SectorTrendAnalysisService sectorTrendAnalysisService,
                             PortfolioSectorDiagnosticService portfolioSectorDiagnosticService,
+                            GdeltClient gdeltClient,
                             com.tradeagent.config.GdeltProperties gdeltProperties) {
         this.sectorAnalysisService = sectorAnalysisService;
         this.sectorTrendAnalysisService = sectorTrendAnalysisService;
         this.portfolioSectorDiagnosticService = portfolioSectorDiagnosticService;
+        this.gdeltClient = gdeltClient;
         this.gdeltProperties = gdeltProperties;
     }
 
@@ -126,6 +130,34 @@ public class SectorController {
                 GdeltSupport.defaultCacheDir(gdeltProperties.getCacheDir()),
                 gdeltProperties.getMinRequestIntervalMs(),
                 Duration.ofHours(Math.max(gdeltProperties.getCacheTtlHours(), 1))
+        ));
+    }
+
+    @GetMapping("/gdelt-test")
+    public ApiResponse<GdeltDebugResultDto> testGdelt(@RequestParam String query,
+                                                      @RequestParam(required = false) LocalDate from,
+                                                      @RequestParam(required = false) LocalDate to,
+                                                      @RequestParam(defaultValue = "5") int maxRecords,
+                                                      @RequestParam(defaultValue = "false") boolean force) {
+        List<NewsEventDto> items = gdeltClient.fetchByQuery(query, from, to, maxRecords, force).stream()
+                .map(event -> new NewsEventDto(
+                        event.getSectorCode(),
+                        event.getSymbol(),
+                        event.getTitle(),
+                        event.getSource(),
+                        event.getUrl(),
+                        event.getToneScore(),
+                        event.getPublishedAt()
+                ))
+                .toList();
+
+        return ApiResponse.ok(new GdeltDebugResultDto(
+                query,
+                from,
+                to,
+                maxRecords,
+                items.size(),
+                items
         ));
     }
 }

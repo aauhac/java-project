@@ -1,0 +1,140 @@
+# TradeAgent
+
+투자 판단 분석 플랫폼입니다. Spring Boot + JPA + H2 + 정적 프론트엔드로 구성되어 있습니다.
+
+## 요구 사항
+
+- Java 21
+- Maven 3.9+ (선택, `mvnw` 사용 시 불필요)
+- Windows 기준 `cmd.exe` 또는 PowerShell
+
+## 빌드 방법
+
+프로젝트 루트(`c:\Users\kmh26\IdeaProjects\TradeAgent`)에서 실행합니다.
+
+### CMD (Maven 설치 없이 권장)
+```cmd
+mvnw.cmd clean test
+mvnw.cmd clean package
+```
+
+### CMD (Maven 설치된 경우)
+```cmd
+mvn clean test
+mvn clean package
+```
+
+### PowerShell
+PowerShell 프로필 오류가 보이면, 프로필을 로드하지 않고 실행하세요.
+
+```powershell
+powershell -NoProfile -Command ".\mvnw.cmd clean test"
+powershell -NoProfile -Command ".\mvnw.cmd clean package"
+```
+
+## 실행 방법
+
+패키징 후 JAR로 실행합니다.
+
+```cmd
+java -jar target\TradeAgent-0.0.1-SNAPSHOT.jar
+```
+
+또는 개발 중에는:
+
+```cmd
+mvnw.cmd spring-boot:run
+```
+
+## 접속 주소
+
+앱이 기본 포트(8080)로 뜨면 다음 경로를 사용합니다.
+
+- `http://localhost:8080/` → `http://localhost:8080/chart` 로 이동
+- `http://localhost:8080/chart/index.html` → 차트 페이지
+- `http://localhost:8080/dashboard/index.html` → 대시보드
+- `http://localhost:8080/analysis/index.html` → 투자 판단 품질 평가
+- `http://localhost:8080/api-test.html` → API 테스트 화면
+
+## 데이터 저장
+
+기본적으로 H2 파일 DB를 사용합니다.
+
+- DB 파일: `data/tradeagent.mv.db`
+- 잠금 파일: `data/tradeagent.lock.db`
+- 추적 파일: `data/tradeagent.trace.db`
+
+앱 실행 시 `data/` 아래 파일이 자동으로 사용됩니다.
+
+## 주요 설정 파일
+
+- `src/main/resources/application.properties`
+
+핵심 설정 요약:
+
+- `alpaca.*` : Alpaca 시세 API 설정
+- `gdelt.*` : GDELT 뉴스/이벤트 API 설정
+- `vllm.*` : 로컬 LLM(vLLM) 설정
+- `spring.datasource.*` : H2 파일 DB 설정
+- `trade.seed.*` : 초기 데이터 주입 설정
+
+## 환경 변수
+
+필수는 아니지만, 외부 API를 사용할 때 아래 값을 넣을 수 있습니다.
+
+### Alpaca
+- `ALPACA_API_KEY`
+- `ALPACA_API_SECRET`
+
+### vLLM
+- `VLLM_ENABLED=true`
+- `VLLM_BASE_URL=http://localhost:8000`
+- `VLLM_MODEL=Qwen/Qwen2.5-7B-Instruct`
+- `VLLM_API_KEY` (필요한 경우)
+
+예시(CMD):
+
+```cmd
+set ALPACA_API_KEY=your_key
+set ALPACA_API_SECRET=your_secret
+set VLLM_ENABLED=true
+set VLLM_BASE_URL=http://localhost:8000
+```
+
+## PowerShell 프로필 오류 대응
+
+현재 보이는 오류는 PowerShell 프로필(`Microsoft.PowerShell_profile.ps1`)에서 존재하지 않는 Copilot 관련 경로를 실행하려고 해서 발생한 것으로 보입니다.
+
+가장 쉬운 우회 방법:
+
+```powershell
+powershell -NoProfile
+```
+
+또는 프로필 파일의 3번째 줄에서 잘못된 경로를 제거/수정하세요.
+
+## 실행 순서 추천
+
+1. Java 21 설치 확인
+2. `mvnw.cmd -version` 실행 (최초 1회 Wrapper 자동 다운로드)
+3. `mvnw.cmd clean test`
+4. `mvnw.cmd spring-boot:run`
+5. 브라우저에서 `http://localhost:8080/` 접속
+
+## 테스트
+
+기본 테스트는 Spring context와 루트 경로 리다이렉트를 확인합니다.
+
+```cmd
+mvnw.cmd test
+```
+
+## Maven Wrapper 파일
+
+다음 파일이 포함되어 있으며, Maven 미설치 환경에서도 빌드가 가능합니다.
+
+- `mvnw.cmd`
+- `mvnw`
+- `.mvn/wrapper/maven-wrapper.properties`
+
+최초 실행 시 `.mvn/wrapper/maven-wrapper.jar`를 자동 다운로드합니다.

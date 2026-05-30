@@ -9,6 +9,8 @@ import com.tradeagent.common.ValidationException;
 import com.tradeagent.config.GdeltProperties;
 import com.tradeagent.config.VllmProperties;
 import com.tradeagent.feedback.VllmClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.http.HttpStatusCode;
@@ -30,6 +32,8 @@ import java.nio.file.Path;
 
 @Component
 public class GdeltClient {
+
+    private static final Logger log = LoggerFactory.getLogger(GdeltClient.class);
 
     private static final DateTimeFormatter GDELT_DATE_TIME = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
     private static final Map<String, String> QUERY_BY_SECTOR = Map.of(
@@ -106,6 +110,20 @@ public class GdeltClient {
                 .toList();
     }
 
+    public List<NewsEvent> fetchByQuery(String query, LocalDate from, LocalDate to, int maxRecords, boolean forceRefresh) {
+        LocalDate resolvedTo = to != null ? to : LocalDate.now();
+        LocalDate resolvedFrom = from != null ? from : resolvedTo.minusDays(Math.max(gdeltProperties.getLookbackDays(), 0));
+        int resolvedMaxRecords = maxRecords > 0 ? Math.min(maxRecords, 10) : 5;
+
+        if (resolvedFrom.isAfter(resolvedTo)) {
+            throw new ValidationException(ErrorCode.INVALID_INPUT, "from must be on or before to");
+        }
+
+        return requestArticles(query, resolvedFrom, resolvedTo, resolvedMaxRecords, forceRefresh).stream()
+                .map(article -> toNewsEvent(article, "DEBUG", resolvedTo))
+                .toList();
+    }
+
     private List<GdeltArticle> requestArticles(String query, LocalDate from, LocalDate to, int maxRecords, boolean forceRefresh) {
         String normalizedQuery = normalizeQuery(query);
         String cacheKey = GdeltSupport.cacheKey(normalizedQuery, from, to, maxRecords);
@@ -144,6 +162,16 @@ public class GdeltClient {
                 return List.of();
             }
             if (raw.statusCode().value() == 429 || isRateLimitBody(raw.body())) {
+                if (!forceRefresh) {
+                    var stale = GdeltSupport.loadCacheAllowExpired(cacheDir, cacheKey);
+                    if (stale.isPresent()) {
+                        log.warn("GDELT rate-limited. Returning stale cache for key={}", cacheKey);
+                        GdeltDocResponse staleResponse = parseDocResponse(stale.get().body(), 200);
+                        if (staleResponse != null && staleResponse.articles() != null) {
+                            return staleResponse.articles();
+                        }
+                    }
+                }
                 throw new GdeltRateLimitException("GDELT 요청 제한(429)으로 동향 분석을 수행하지 못했습니다. 잠시 후 다시 시도하세요.");
             }
             if (raw.statusCode().isError()) {
@@ -164,12 +192,32 @@ public class GdeltClient {
             throw ex;
         } catch (WebClientResponseException ex) {
             if (ex.getStatusCode().value() == 429 || isRateLimitBody(ex.getResponseBodyAsString())) {
+                if (!forceRefresh) {
+                    var stale = GdeltSupport.loadCacheAllowExpired(cacheDir, cacheKey);
+                    if (stale.isPresent()) {
+                        log.warn("GDELT rate-limited (exception path). Returning stale cache for key={}", cacheKey);
+                        GdeltDocResponse staleResponse = parseDocResponse(stale.get().body(), 200);
+                        if (staleResponse != null && staleResponse.articles() != null) {
+                            return staleResponse.articles();
+                        }
+                    }
+                }
                 throw new GdeltRateLimitException("GDELT 요청 제한(429)으로 동향 분석을 수행하지 못했습니다. 잠시 후 다시 시도하세요.");
             }
+            String bodyPreview = preview(ex.getResponseBodyAsString(), 300);
+            log.error("GDELT HTTP error: status={}, body={}", ex.getStatusCode().value(), bodyPreview, ex);
             throw new ExternalApiException(ErrorCode.GDELT_API_ERROR,
-                    "GDELT request failed with status " + ex.getStatusCode().value());
+                    "GDELT request failed with status " + ex.getStatusCode().value() + " body=" + bodyPreview);
         } catch (RuntimeException ex) {
-            throw new ExternalApiException(ErrorCode.GDELT_API_ERROR, "GDELT request failed");
+            if (containsCause(ex, java.util.concurrent.TimeoutException.class)) {
+                log.error("GDELT timeout: {}", summarizeException(ex), ex);
+                throw new ExternalApiException(ErrorCode.GDELT_API_ERROR,
+                        "GDELT request timeout after " + gdeltProperties.getTimeoutSeconds()
+                                + "s. Retry with force=false to use cache, reduce date range, or increase gdelt.timeout-seconds.");
+            }
+            log.error("GDELT runtime error: {}", summarizeException(ex), ex);
+            throw new ExternalApiException(ErrorCode.GDELT_API_ERROR,
+                    "GDELT request failed: " + summarizeException(ex));
         }
     }
 
@@ -326,6 +374,37 @@ public class GdeltClient {
 
     private String defaultText(String value, String fallback) {
         return StringUtils.hasText(value) ? value : fallback;
+    }
+
+    private String summarizeException(Throwable ex) {
+        Throwable root = ex;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        String rootMessage = StringUtils.hasText(root.getMessage()) ? root.getMessage() : "(no message)";
+        return root.getClass().getSimpleName() + ": " + rootMessage;
+    }
+
+    private boolean containsCause(Throwable throwable, Class<? extends Throwable> type) {
+        Throwable current = throwable;
+        while (current != null && current.getCause() != current) {
+            if (type.isInstance(current)) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private String preview(String text, int maxLength) {
+        if (!StringUtils.hasText(text)) {
+            return "-";
+        }
+        String trimmed = text.trim();
+        if (trimmed.length() <= maxLength) {
+            return trimmed;
+        }
+        return trimmed.substring(0, maxLength) + "...(truncated)";
     }
 }
 

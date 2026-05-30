@@ -20,7 +20,7 @@ public class ChartController {
 
     @GetMapping("/")
     public String root() {
-        return "redirect:/index.html";
+        return "redirect:/chart";
     }
 
     @GetMapping("/chart")

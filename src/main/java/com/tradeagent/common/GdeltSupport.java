@@ -76,6 +76,19 @@ public final class GdeltSupport {
         }
     }
 
+    public static Optional<CacheSnapshot> loadCacheAllowExpired(Path cacheDir, String key) {
+        Path file = cacheDir.resolve(key + ".json");
+        if (!Files.exists(file)) {
+            return Optional.empty();
+        }
+        try {
+            FileTime lastModified = Files.getLastModifiedTime(file);
+            return Optional.of(new CacheSnapshot(Files.readString(file, StandardCharsets.UTF_8), lastModified.toInstant()));
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to read GDELT cache", ex);
+        }
+    }
+
     public static void saveCache(Path cacheDir, String key, String body) {
         try {
             Files.createDirectories(cacheDir);
