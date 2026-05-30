@@ -31,6 +31,12 @@ public class SectorScoreSchemaInitializer implements ApplicationRunner {
                     statement.execute("ALTER TABLE sector_score ADD COLUMN IF NOT EXISTS keyword_strength_score DECIMAL(6,2) DEFAULT 0 NOT NULL");
                     statement.execute("ALTER TABLE sector_score ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'NEUTRAL' NOT NULL");
                     statement.execute("ALTER TABLE sector_score ADD COLUMN IF NOT EXISTS analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL");
+                    statement.execute("ALTER TABLE sector_score ADD COLUMN IF NOT EXISTS source_type VARCHAR(32) DEFAULT 'LEGACY'");
+                    statement.execute("ALTER TABLE sector_score ADD COLUMN IF NOT EXISTS sample_file_count INT DEFAULT 0");
+                    statement.execute("ALTER TABLE sector_score ADD COLUMN IF NOT EXISTS raw_record_count INT DEFAULT 0");
+                    statement.execute("ALTER TABLE sector_score ADD COLUMN IF NOT EXISTS top_themes VARCHAR(2000) DEFAULT ''");
+                    statement.execute("ALTER TABLE sector_score ADD COLUMN IF NOT EXISTS top_organizations VARCHAR(2000) DEFAULT ''");
+                    statement.execute("ALTER TABLE sector_score ADD COLUMN IF NOT EXISTS llm_sentiment_reason VARCHAR(4000) DEFAULT ''");
                 }
 
                 if (hasTable(connection, "NEWS_EVENT")) {
