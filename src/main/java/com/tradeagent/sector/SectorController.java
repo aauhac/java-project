@@ -2,6 +2,7 @@ package com.tradeagent.sector;
 
 import com.tradeagent.common.ApiResponse;
 import com.tradeagent.common.GdeltSupport;
+import com.tradeagent.sector.SectorApiModels.RefreshNewsResultDto;
 import com.tradeagent.sector.SectorApiModels.NewsEventDto;
 import com.tradeagent.sector.SectorApiModels.GdeltDebugResultDto;
 import com.tradeagent.sector.SectorApiModels.PortfolioSectorDiagnosticDto;
@@ -27,17 +28,20 @@ public class SectorController {
 
     private final SectorAnalysisService sectorAnalysisService;
     private final SectorTrendAnalysisService sectorTrendAnalysisService;
+    private final SectorGkgTrendService sectorGkgTrendService;
     private final PortfolioSectorDiagnosticService portfolioSectorDiagnosticService;
     private final GdeltClient gdeltClient;
     private final com.tradeagent.config.GdeltProperties gdeltProperties;
 
     public SectorController(SectorAnalysisService sectorAnalysisService,
                             SectorTrendAnalysisService sectorTrendAnalysisService,
+                            SectorGkgTrendService sectorGkgTrendService,
                             PortfolioSectorDiagnosticService portfolioSectorDiagnosticService,
                             GdeltClient gdeltClient,
                             com.tradeagent.config.GdeltProperties gdeltProperties) {
         this.sectorAnalysisService = sectorAnalysisService;
         this.sectorTrendAnalysisService = sectorTrendAnalysisService;
+        this.sectorGkgTrendService = sectorGkgTrendService;
         this.portfolioSectorDiagnosticService = portfolioSectorDiagnosticService;
         this.gdeltClient = gdeltClient;
         this.gdeltProperties = gdeltProperties;
@@ -73,41 +77,23 @@ public class SectorController {
         return ApiResponse.ok(sectorAnalysisService.calculateTodaySectorScores());
     }
 
-    @PostMapping("/analyze-trend")
-    public ApiResponse<List<SectorTrendDto>> analyzeTrend(@RequestParam(required = false) LocalDate date,
-                                                          @RequestParam(defaultValue = "false") boolean force) {
-        return ApiResponse.ok(sectorTrendAnalysisService.getTrendScores(date));
-    }
-
-    @PostMapping("/user/{userId}/analyze-trend")
-    public ApiResponse<TrendAnalysisResultDto> analyzeTrendForUser(@PathVariable Long userId,
-                                                                    @RequestParam(required = false) LocalDate date,
-                                                                    @RequestParam(defaultValue = "false") boolean force) {
-        List<SectorTrendDto> trends = sectorTrendAnalysisService.getTrendScores(date);
-        PortfolioTrendMatchDto trendMatch = portfolioSectorDiagnosticService.calculateTrendMatch(userId, date, trends);
-        return ApiResponse.ok(new TrendAnalysisResultDto(trends, trendMatch));
-    }
-
-    @PostMapping("/refresh-news-trend")
-    public ApiResponse<TrendAnalysisResultDto> refreshNewsTrend(@RequestParam(required = false) LocalDate date,
-                                                                @RequestParam(defaultValue = "false") boolean force) {
-        List<SectorTrendDto> trends = sectorTrendAnalysisService.refreshTrendAnalysis(date, force);
-        PortfolioTrendMatchDto trendMatch = portfolioSectorDiagnosticService.calculateTrendMatch(1L, date, trends);
-        return ApiResponse.ok(new TrendAnalysisResultDto(trends, trendMatch));
-    }
-
-    @PostMapping("/user/{userId}/refresh-news-trend")
-    public ApiResponse<TrendAnalysisResultDto> refreshNewsTrendForUser(@PathVariable Long userId,
-                                                                       @RequestParam(required = false) LocalDate date,
-                                                                       @RequestParam(defaultValue = "false") boolean force) {
-        List<SectorTrendDto> trends = sectorTrendAnalysisService.refreshTrendAnalysis(date, force);
-        PortfolioTrendMatchDto trendMatch = portfolioSectorDiagnosticService.calculateTrendMatch(userId, date, trends);
-        return ApiResponse.ok(new TrendAnalysisResultDto(trends, trendMatch));
+    @PostMapping("/refresh-news")
+    public ApiResponse<RefreshNewsResultDto> refreshNews(@RequestParam(required = false) LocalDate startDate,
+                                                         @RequestParam(required = false) Integer days,
+                                                         @RequestParam(required = false) Integer sampleTime) {
+        java.time.LocalTime resolvedSampleTime = sampleTime == null
+                ? null
+                : java.time.LocalTime.of(sampleTime / 100, sampleTime % 100);
+        return ApiResponse.ok(sectorGkgTrendService.refreshNews(startDate, days, resolvedSampleTime));
     }
 
     @GetMapping("/trends")
-    public ApiResponse<List<SectorTrendDto>> getTrends(@RequestParam(required = false) LocalDate date) {
-        return ApiResponse.ok(sectorTrendAnalysisService.getTrendScores(date));
+    public ApiResponse<List<SectorTrendDto>> getTrends(@RequestParam(required = false) LocalDate from,
+                                                       @RequestParam(required = false) LocalDate to) {
+        if (from == null && to == null) {
+            return ApiResponse.ok(sectorGkgTrendService.getTrendScoresForDate(null));
+        }
+        return ApiResponse.ok(sectorGkgTrendService.getTrendScores(from, to));
     }
 
     @GetMapping("/{sectorCode}/trends")

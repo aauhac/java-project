@@ -105,27 +105,21 @@
             return request('/api/sectors/masters');
         },
         analyzeSectorTrend(date) {
-            return request(`/api/sectors/analyze-trend${buildQuery({date})}`, {
+            return request(`/api/sectors/trends${buildQuery({from: date, to: date})}`);
+        },
+        refreshSectorNews(startDate, days = 30, sampleTime = 1930) {
+            return request(`/api/sectors/refresh-news${buildQuery({startDate, days, sampleTime})}`, {
                 method: 'POST'
             });
         },
         analyzeSectorTrendForUser(userId = 1, date) {
-            return request(`/api/sectors/user/${userId}/analyze-trend${buildQuery({date})}`, {
-                method: 'POST'
-            });
-        },
-        refreshSectorNewsTrend(date, force = true) {
-            return request(`/api/sectors/refresh-news-trend${buildQuery({date, force})}`, {
-                method: 'POST'
-            });
-        },
-        refreshSectorNewsTrendForUser(userId = 1, date, force = true) {
-            return request(`/api/sectors/user/${userId}/refresh-news-trend${buildQuery({date, force})}`, {
-                method: 'POST'
-            });
+            return Promise.all([
+                request(`/api/sectors/trends${buildQuery({from: date, to: date})}`),
+                request(`/api/sectors/user/${userId}/trend-match${buildQuery({date})}`)
+            ]).then(([trends, trendMatch]) => ({data: {trends: trends.data || [], trendMatch: trendMatch.data || null}}));
         },
         getSectorTrends(date) {
-            return request(`/api/sectors/trends${buildQuery({date})}`);
+            return request(`/api/sectors/trends${buildQuery({from: date, to: date})}`);
         },
         getSectorTrendHistory(sectorCode, from, to) {
             return request(`/api/sectors/${encodeURIComponent(sectorCode)}/trends${buildQuery({from, to})}`);

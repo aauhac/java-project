@@ -23,8 +23,7 @@ public class PortfolioMapper {
             Map.entry("EV", "Electric Vehicle"),
             Map.entry("BIO", "Biotech"),
             Map.entry("CLOUD", "Cloud"),
-            Map.entry("CYBER", "Cybersecurity"),
-            Map.entry("FINPAY", "Fintech"),
+            Map.entry("ENERGY", "Energy"),
             Map.entry("FIN", "Financial"),
             Map.entry("TECH", "Technology")
     );

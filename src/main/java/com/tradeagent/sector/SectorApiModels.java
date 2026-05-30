@@ -89,6 +89,16 @@ public final class SectorApiModels {
     ) {
     }
 
+    public record RefreshNewsResultDto(
+            LocalDate startDate,
+            int days,
+            String sampleTime,
+            int sampleFileCount,
+            int rawRecordCount,
+            List<SectorTrendDto> trends
+    ) {
+    }
+
     public record GdeltDebugResultDto(
             String query,
             LocalDate from,

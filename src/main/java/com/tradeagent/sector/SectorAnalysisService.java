@@ -151,8 +151,7 @@ public class SectorAnalysisService {
         saveSectorMasterIfMissing("EV", "전기차", "Electric vehicle manufacturers and battery ecosystem.");
         saveSectorMasterIfMissing("BIO", "바이오", "Biotech and biopharma innovators.");
         saveSectorMasterIfMissing("CLOUD", "클라우드", "Cloud software, SaaS platforms, and enterprise infrastructure.");
-        saveSectorMasterIfMissing("CYBER", "사이버보안", "Cybersecurity platforms and network security leaders.");
-        saveSectorMasterIfMissing("FINPAY", "핀테크", "Payments, fintech platforms, and digital financial infrastructure.");
+        saveSectorMasterIfMissing("ENERGY", "에너지", "Energy, oil, gas, utilities, and raw materials ecosystem.");
     }
 
     private void seedSymbolSectorMappings() {
@@ -173,13 +172,10 @@ public class SectorAnalysisService {
         saveSymbolSectorMapIfMissing("ORCL", "CLOUD", false, BigDecimal.valueOf(0.85));
         saveSymbolSectorMapIfMissing("CRM", "CLOUD", false, BigDecimal.valueOf(0.80));
         saveSymbolSectorMapIfMissing("NOW", "CLOUD", false, BigDecimal.valueOf(0.75));
-        saveSymbolSectorMapIfMissing("CRWD", "CYBER", true, BigDecimal.valueOf(1.00));
-        saveSymbolSectorMapIfMissing("PANW", "CYBER", false, BigDecimal.valueOf(0.90));
-        saveSymbolSectorMapIfMissing("ZS", "CYBER", false, BigDecimal.valueOf(0.80));
-        saveSymbolSectorMapIfMissing("V", "FINPAY", true, BigDecimal.valueOf(1.00));
-        saveSymbolSectorMapIfMissing("MA", "FINPAY", false, BigDecimal.valueOf(0.95));
-        saveSymbolSectorMapIfMissing("PYPL", "FINPAY", false, BigDecimal.valueOf(0.70));
-        saveSymbolSectorMapIfMissing("SQ", "FINPAY", false, BigDecimal.valueOf(0.65));
+        saveSymbolSectorMapIfMissing("XOM", "ENERGY", true, BigDecimal.valueOf(1.00));
+        saveSymbolSectorMapIfMissing("CVX", "ENERGY", false, BigDecimal.valueOf(0.95));
+        saveSymbolSectorMapIfMissing("SLB", "ENERGY", false, BigDecimal.valueOf(0.80));
+        saveSymbolSectorMapIfMissing("CCJ", "ENERGY", false, BigDecimal.valueOf(0.70));
     }
 
     private void seedSectorProxies() {
@@ -202,14 +198,10 @@ public class SectorAnalysisService {
         saveSectorProxyIfMissing("CLOUD", "ORCL", "STOCK", BigDecimal.valueOf(0.85));
         saveSectorProxyIfMissing("CLOUD", "CRM", "STOCK", BigDecimal.valueOf(0.80));
         saveSectorProxyIfMissing("CLOUD", "NOW", "STOCK", BigDecimal.valueOf(0.75));
-        saveSectorProxyIfMissing("CYBER", "CRWD", "STOCK", BigDecimal.valueOf(1.00));
-        saveSectorProxyIfMissing("CYBER", "PANW", "STOCK", BigDecimal.valueOf(0.90));
-        saveSectorProxyIfMissing("CYBER", "ZS", "STOCK", BigDecimal.valueOf(0.80));
-        saveSectorProxyIfMissing("CYBER", "CIBR", "ETF", BigDecimal.valueOf(0.70));
-        saveSectorProxyIfMissing("FINPAY", "V", "STOCK", BigDecimal.valueOf(1.00));
-        saveSectorProxyIfMissing("FINPAY", "MA", "STOCK", BigDecimal.valueOf(0.95));
-        saveSectorProxyIfMissing("FINPAY", "PYPL", "STOCK", BigDecimal.valueOf(0.70));
-        saveSectorProxyIfMissing("FINPAY", "SQ", "STOCK", BigDecimal.valueOf(0.65));
+        saveSectorProxyIfMissing("ENERGY", "XOM", "STOCK", BigDecimal.valueOf(1.00));
+        saveSectorProxyIfMissing("ENERGY", "CVX", "STOCK", BigDecimal.valueOf(0.95));
+        saveSectorProxyIfMissing("ENERGY", "SLB", "STOCK", BigDecimal.valueOf(0.80));
+        saveSectorProxyIfMissing("ENERGY", "XLE", "ETF", BigDecimal.valueOf(0.75));
     }
 
     private void saveSectorMasterIfMissing(String sectorCode, String sectorName, String description) {

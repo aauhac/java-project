@@ -394,9 +394,9 @@
             let trendsResponse;
             let trendMatchResponse;
             if (refreshNews) {
-                const response = await API.refreshSectorNewsTrendForUser(1, trendState.selectedDate, true);
+                const response = await API.refreshSectorNews(trendState.selectedDate, 30, 1930);
                 trendsResponse = {data: response.data?.trends || []};
-                trendMatchResponse = {data: response.data?.trendMatch || null};
+                trendMatchResponse = await API.getPortfolioTrendMatch(1, trendState.selectedDate);
             } else {
                 [trendsResponse, trendMatchResponse] = await Promise.all([
                     API.getSectorTrends(trendState.selectedDate),

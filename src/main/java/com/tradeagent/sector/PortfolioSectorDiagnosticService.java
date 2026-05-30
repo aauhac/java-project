@@ -29,18 +29,18 @@ public class PortfolioSectorDiagnosticService {
     private final PortfolioRepository portfolioRepository;
     private final SectorMasterRepository sectorMasterRepository;
     private final SectorAnalysisService sectorAnalysisService;
-    private final SectorTrendAnalysisService sectorTrendAnalysisService;
+    private final SectorGkgTrendService sectorGkgTrendService;
     private final SectorFeedbackService sectorFeedbackService;
 
     public PortfolioSectorDiagnosticService(PortfolioRepository portfolioRepository,
                                             SectorMasterRepository sectorMasterRepository,
                                             SectorAnalysisService sectorAnalysisService,
-                                            SectorTrendAnalysisService sectorTrendAnalysisService,
+                                            SectorGkgTrendService sectorGkgTrendService,
                                             SectorFeedbackService sectorFeedbackService) {
         this.portfolioRepository = portfolioRepository;
         this.sectorMasterRepository = sectorMasterRepository;
         this.sectorAnalysisService = sectorAnalysisService;
-        this.sectorTrendAnalysisService = sectorTrendAnalysisService;
+        this.sectorGkgTrendService = sectorGkgTrendService;
         this.sectorFeedbackService = sectorFeedbackService;
     }
 
@@ -63,7 +63,7 @@ public class PortfolioSectorDiagnosticService {
     }
 
     public PortfolioTrendMatchDto calculateTrendMatch(Long userId, LocalDate date) {
-        List<SectorTrendDto> scores = sectorTrendAnalysisService.getTrendScores(date);
+        List<SectorTrendDto> scores = sectorGkgTrendService.getTrendScoresForDate(date);
         if (scores.isEmpty()) {
             return new PortfolioTrendMatchDto(
                     date != null ? date : LocalDate.now(),
