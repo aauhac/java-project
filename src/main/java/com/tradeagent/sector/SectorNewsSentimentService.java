@@ -20,6 +20,11 @@ import java.util.Map;
 @Service
 public class SectorNewsSentimentService {
 
+    private static final int TOP_RECORDS_FOR_LLM = 20;
+    private static final BigDecimal MIN_ADJUSTMENT = BigDecimal.valueOf(-15);
+    private static final BigDecimal MAX_ADJUSTMENT = BigDecimal.valueOf(15);
+    private static final String FALLBACK_REASON = "GDELT GKG tone 기반 점수";
+
     private final VllmClient vllmClient;
     private final VllmProperties vllmProperties;
     private final SectorRecordRanker sectorRecordRanker;
@@ -46,7 +51,7 @@ public class SectorNewsSentimentService {
             return fallback(group.sectorCode());
         }
 
-        List<GdeltGkgRecord> topRecords = sectorRecordRanker.selectTopRecords(group.sectorCode(), group.records(), 20);
+        List<GdeltGkgRecord> topRecords = sectorRecordRanker.selectTopRecords(group.sectorCode(), group.records(), TOP_RECORDS_FOR_LLM);
         String prompt = buildPrompt(group, topRecords);
         String response = vllmClient.generateText(prompt);
         return parseResponse(group.sectorCode(), response);
@@ -81,10 +86,10 @@ public class SectorNewsSentimentService {
             JsonNode root = objectMapper.readTree(response);
             String label = root.path("sentimentLabel").asText("NEUTRAL");
             BigDecimal adjustment = new BigDecimal(root.path("sentimentAdjustment").asText("0"))
-                    .max(BigDecimal.valueOf(-15))
-                    .min(BigDecimal.valueOf(15))
+                    .max(MIN_ADJUSTMENT)
+                    .min(MAX_ADJUSTMENT)
                     .setScale(2, RoundingMode.HALF_UP);
-            String reason = root.path("reason").asText("GDELT GKG tone 기반 점수");
+            String reason = root.path("reason").asText(FALLBACK_REASON);
             List<String> positiveFactors = toStringList(root.path("positiveFactors"));
             List<String> riskFactors = toStringList(root.path("riskFactors"));
             return new SectorSentimentResult(sectorCode, label, adjustment, reason, positiveFactors, riskFactors);
@@ -108,7 +113,7 @@ public class SectorNewsSentimentService {
                 sectorCode,
                 "NEUTRAL",
                 BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP),
-                "GDELT GKG tone 기반 점수",
+                FALLBACK_REASON,
                 List.of(),
                 List.of()
         );

@@ -12,6 +12,9 @@ import java.util.List;
 public class VllmClient {
 
     private static final String FALLBACK_MESSAGE = "vLLM 서버 연동 전 기본 피드백입니다.";
+    private static final int MAX_TOKENS = 512;
+    private static final double TEMPERATURE = 0.2;
+    private static final int TIMEOUT_SECONDS = 30;
 
     private final WebClient webClient;
     private final VllmProperties vllmProperties;
@@ -36,12 +39,12 @@ public class VllmClient {
                     .bodyValue(new VllmChatRequest(
                             vllmProperties.getModel(),
                             List.of(new VllmMessage("user", prompt)),
-                            vllmProperties.getTemperature(),
-                            vllmProperties.getMaxTokens()
+                            TEMPERATURE,
+                            MAX_TOKENS
                     ))
                     .retrieve()
                     .bodyToMono(VllmChatResponse.class)
-                    .block(Duration.ofSeconds(vllmProperties.getTimeoutSeconds()));
+                    .block(Duration.ofSeconds(TIMEOUT_SECONDS));
 
             if (response == null || response.choices() == null || response.choices().isEmpty()) {
                 return FALLBACK_MESSAGE;

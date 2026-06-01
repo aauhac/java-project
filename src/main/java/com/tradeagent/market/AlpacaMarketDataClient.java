@@ -21,6 +21,8 @@ public class AlpacaMarketDataClient extends AbstractMarketDataClient {
 
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(15);
     private static final DateTimeFormatter ISO_OFFSET_DATE_TIME = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
+    private static final String ALPACA_BASE_URL = "https://data.alpaca.markets/v2";
+    private static final String DEFAULT_TIMEFRAME = "1Day";
 
     private final WebClient webClient;
     private final AlpacaProperties properties;
@@ -31,7 +33,7 @@ public class AlpacaMarketDataClient extends AbstractMarketDataClient {
                                   MarketDataMapper marketDataMapper) {
         this.properties = properties;
         this.marketDataMapper = marketDataMapper;
-        this.webClient = webClientBuilder.baseUrl(normalizeBaseUrl(properties.getBaseUrl())).build();
+        this.webClient = webClientBuilder.baseUrl(normalizeBaseUrl(ALPACA_BASE_URL)).build();
     }
 
     @Override
@@ -101,10 +103,7 @@ public class AlpacaMarketDataClient extends AbstractMarketDataClient {
     }
 
     private String resolveTimeframe() {
-        if (StringUtils.hasText(properties.getDefaultTimeframe())) {
-            return properties.getDefaultTimeframe().trim();
-        }
-        return "1Day";
+        return DEFAULT_TIMEFRAME;
     }
 
     private String normalizeBaseUrl(String baseUrl) {

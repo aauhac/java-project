@@ -16,6 +16,10 @@ import java.util.stream.Collectors;
 @Component
 public class SectorGkgAggregator {
 
+    private static final int SAMPLE_RECORD_LIMIT = 20;
+    private static final int KEYWORD_SCORE_MAX = 60;
+    private static final int TOP_VALUE_LIMIT = 10;
+
     private final SectorRecordRanker sectorRecordRanker;
 
     public SectorGkgAggregator(SectorRecordRanker sectorRecordRanker) {
@@ -44,7 +48,7 @@ public class SectorGkgAggregator {
                 .min(BigDecimal.valueOf(100))
                 .setScale(2, RoundingMode.HALF_UP);
         BigDecimal keywordStrengthScore = computeKeywordStrengthScore(sectorCode, records);
-        List<GdeltGkgRecord> sampleRecords = sectorRecordRanker.selectTopRecords(sectorCode, records, 20);
+        List<GdeltGkgRecord> sampleRecords = sectorRecordRanker.selectTopRecords(sectorCode, records, SAMPLE_RECORD_LIMIT);
 
         return new SectorRecordGroup(
                 sectorCode,
@@ -70,7 +74,7 @@ public class SectorGkgAggregator {
         // scoreRecord upper-bound is effectively around 60 in current weights.
         BigDecimal normalized = BigDecimal.valueOf(averageScore)
                 .multiply(BigDecimal.valueOf(100))
-                .divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
+                .divide(BigDecimal.valueOf(KEYWORD_SCORE_MAX), 2, RoundingMode.HALF_UP);
         if (normalized.compareTo(BigDecimal.ZERO) < 0) {
             return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         }
@@ -105,7 +109,7 @@ public class SectorGkgAggregator {
 
         return counts.entrySet().stream()
                 .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
-                .limit(10)
+                .limit(TOP_VALUE_LIMIT)
                 .map(Map.Entry::getKey)
                 .toList();
     }

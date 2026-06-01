@@ -3,7 +3,6 @@ package com.tradeagent.market;
 import com.tradeagent.common.DateTimeUtil;
 import com.tradeagent.common.ErrorCode;
 import com.tradeagent.common.ValidationException;
-import com.tradeagent.config.AlpacaProperties;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -17,16 +16,15 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class HistoricalBarService {
 
+    private static final int DEFAULT_LIMIT = 60;
+
     private final PriceBarRepository priceBarRepository;
     private final MarketDataClient marketDataClient;
-    private final AlpacaProperties alpacaProperties;
 
     public HistoricalBarService(PriceBarRepository priceBarRepository,
-                                MarketDataClient marketDataClient,
-                                AlpacaProperties alpacaProperties) {
+                                MarketDataClient marketDataClient) {
         this.priceBarRepository = priceBarRepository;
         this.marketDataClient = marketDataClient;
-        this.alpacaProperties = alpacaProperties;
     }
 
     public List<PriceBar> getHistoricalBars(String symbol, LocalDate from, LocalDate to) {
@@ -70,7 +68,7 @@ public class HistoricalBarService {
 
     private DateRange resolveRange(LocalDate from, LocalDate to) {
         LocalDate resolvedTo = to != null ? to : DateTimeUtil.today();
-        int defaultSpan = Math.max(alpacaProperties.getDefaultLimit() - 1, 30);
+        int defaultSpan = Math.max(DEFAULT_LIMIT - 1, 30);
         LocalDate resolvedFrom = from != null ? from : resolvedTo.minusDays(defaultSpan);
 
         if (resolvedFrom.isAfter(resolvedTo)) {

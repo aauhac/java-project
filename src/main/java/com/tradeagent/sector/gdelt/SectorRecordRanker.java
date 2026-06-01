@@ -15,6 +15,13 @@ import java.util.regex.Pattern;
 @Component
 public class SectorRecordRanker {
 
+    private static final int DEFAULT_LIMIT = 20;
+    private static final int STRONG_KEYWORD_SCORE = 5;
+    private static final int SUPPORT_KEYWORD_SCORE = 2;
+    private static final int THEME_BONUS = 8;
+    private static final int ORGANIZATION_BONUS = 6;
+    private static final int TONE_BONUS_MAX = 12;
+
     private final SectorKeywordProvider keywordProvider;
 
     public SectorRecordRanker(SectorKeywordProvider keywordProvider) {
@@ -30,7 +37,7 @@ public class SectorRecordRanker {
             deduped.putIfAbsent(key, record);
         }
 
-        int resolvedLimit = limit > 0 ? limit : 20;
+        int resolvedLimit = limit > 0 ? limit : DEFAULT_LIMIT;
         return deduped.values().stream()
                 .sorted(Comparator
                         .comparingInt((GdeltGkgRecord record) -> scoreRecord(sectorCode, record)).reversed()
@@ -41,9 +48,9 @@ public class SectorRecordRanker {
 
     public int scoreRecord(String sectorCode, GdeltGkgRecord record) {
         int keywordScore = keywordHits(sectorCode, record);
-        int themeBonus = hasStrongTheme(sectorCode, record) ? 8 : 0;
-        int organizationBonus = hasOrganizationMatch(sectorCode, record) ? 6 : 0;
-        int toneBonus = Math.min(12, absTone(record.tone()).multiply(BigDecimal.valueOf(2)).intValue());
+        int themeBonus = hasStrongTheme(sectorCode, record) ? THEME_BONUS : 0;
+        int organizationBonus = hasOrganizationMatch(sectorCode, record) ? ORGANIZATION_BONUS : 0;
+        int toneBonus = Math.min(TONE_BONUS_MAX, absTone(record.tone()).multiply(BigDecimal.valueOf(2)).intValue());
         return keywordScore + themeBonus + organizationBonus + toneBonus;
     }
 
@@ -59,12 +66,12 @@ public class SectorRecordRanker {
         int hits = 0;
         for (String keyword : keywordProvider.getStrongKeywords(sectorCode)) {
             if (containsKeyword(haystack, keyword)) {
-                hits += 5;
+                hits += STRONG_KEYWORD_SCORE;
             }
         }
         for (String keyword : keywordProvider.getSupportKeywords(sectorCode)) {
             if (containsKeyword(haystack, keyword)) {
-                hits += 2;
+                hits += SUPPORT_KEYWORD_SCORE;
             }
         }
         return hits;

@@ -2,6 +2,7 @@ package com.tradeagent.chart;
 
 import com.tradeagent.chart.ChartModels.ChartBar;
 import com.tradeagent.chart.ChartModels.ChartResponse;
+import com.tradeagent.config.AlpacaProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -24,11 +25,15 @@ public class ChartService {
 
     private static final Logger log = LoggerFactory.getLogger(ChartService.class);
     private static final DateTimeFormatter ALPACA_DATE_TIME = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
+    private static final String ALPACA_BASE_URL = "https://data.alpaca.markets/v2";
+    private static final String DEFAULT_SYMBOL = "AAPL";
+    private static final String DEFAULT_TIMEFRAME = "1Day";
+    private static final int DEFAULT_LIMIT = 60;
 
-    private final ChartProperties properties;
+    private final AlpacaProperties properties;
     private final RestClient restClient;
 
-    public ChartService(ChartProperties properties) {
+    public ChartService(AlpacaProperties properties) {
         this.properties = properties;
         this.restClient = RestClient.builder().build();
     }
@@ -39,7 +44,7 @@ public class ChartService {
         String apiKey = normalizeCredential(properties.getApiKey());
         String apiSecret = normalizeCredential(properties.getApiSecret());
         LocalDate resolvedEnd = end != null ? end : LocalDate.now(ZoneOffset.UTC);
-        int defaultSpan = Math.max(properties.getDefaultLimit() - 1, 30);
+        int defaultSpan = Math.max(DEFAULT_LIMIT - 1, 30);
         LocalDate resolvedStart = start != null ? start : resolvedEnd.minusDays(defaultSpan);
 
         if (resolvedStart.isAfter(resolvedEnd)) {
@@ -102,20 +107,17 @@ public class ChartService {
     }
 
     private String normalizeSymbol(String symbol) {
-        String candidate = StringUtils.hasText(symbol) ? symbol : properties.getDefaultSymbol();
-        return candidate == null ? "AAPL" : candidate.trim().toUpperCase();
+        String candidate = StringUtils.hasText(symbol) ? symbol : DEFAULT_SYMBOL;
+        return candidate.trim().toUpperCase();
     }
 
     private String normalizeTimeframe(String timeframe) {
-        String candidate = StringUtils.hasText(timeframe) ? timeframe : properties.getDefaultTimeframe();
-        return candidate == null ? "1Day" : candidate.trim();
+        String candidate = StringUtils.hasText(timeframe) ? timeframe : DEFAULT_TIMEFRAME;
+        return candidate.trim();
     }
 
     private String normalizeBaseUrl() {
-        String baseUrl = properties.getBaseUrl();
-        if (!StringUtils.hasText(baseUrl)) {
-            return "https://data.alpaca.markets/v2";
-        }
+        String baseUrl = ALPACA_BASE_URL;
         return baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
     }
 
