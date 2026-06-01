@@ -1,0 +1,35 @@
+제거 대상 패키지-클래스 목록 (검증 업데이트)
+생성/업데이트일: 2026-06-01
+형식: 패키지 - 클래스명 - 상태
+검증 기준: src/main/java 하위 물리 파일 존재 여부
+
+com.tradeagent.sector - GdeltClient - 제거됨
+com.tradeagent.config - GdeltProperties - 제거됨
+com.tradeagent.common - GdeltSupport - 제거됨
+com.tradeagent.common - GdeltRateLimitException - 제거됨
+com.tradeagent - GdeltDebugMain - 제거됨
+
+com.tradeagent.sector - NewsEvent - 제거됨
+com.tradeagent.sector - NewsEventRepository - 제거됨
+
+com.tradeagent.sector - SectorNewsScore - 제거됨
+com.tradeagent.sector - SectorNewsScoreRepository - 제거됨
+
+com.tradeagent.sector - NewsSignalAggregator - 제거됨
+com.tradeagent.sector - SectorScoreCalculator - 제거됨
+com.tradeagent.sector - SectorTrendAnalysisService - 제거됨
+
+com.tradeagent.config - SectorScoreSchemaInitializer - 제거됨
+
+com.tradeagent.demo - DemoDataInitializer - 제거됨
+com.tradeagent.demo - DemoUser - 제거됨
+com.tradeagent.demo - DemoUserRepository - 제거됨
+com.tradeagent.demo - DemoUserFactory - 제거됨
+com.tradeagent.demo - DemoPortfolioFactory - 제거됨
+com.tradeagent.demo - DemoTradeFactory - 제거됨
+com.tradeagent.demo - DemoWatchlistFactory - 제거됨
+com.tradeagent.demo - DemoSectorFactory - 제거됨
+com.tradeagent.demo - DemoMarketDataFactory - 제거됨
+
+미제거 항목:
+없음

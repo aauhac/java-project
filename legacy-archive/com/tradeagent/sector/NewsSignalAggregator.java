@@ -1,7 +1,6 @@
 package com.tradeagent.sector;
 
 import com.tradeagent.common.DateTimeUtil;
-import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -11,7 +10,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 
-@Component
+@Deprecated(forRemoval = false)
 @Transactional(readOnly = true)
 public class NewsSignalAggregator {
 

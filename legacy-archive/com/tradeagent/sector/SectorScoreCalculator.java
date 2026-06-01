@@ -1,13 +1,12 @@
 package com.tradeagent.sector;
 
 import com.tradeagent.common.DateTimeUtil;
-import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 
-@Component
+@Deprecated(forRemoval = false)
 public class SectorScoreCalculator {
 
     private final NewsSignalAggregator newsSignalAggregator;

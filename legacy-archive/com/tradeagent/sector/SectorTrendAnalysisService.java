@@ -1,14 +1,13 @@
 package com.tradeagent.sector;
 
 import com.tradeagent.sector.SectorApiModels.SectorTrendDto;
-import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
 
-@Service
+@Deprecated(forRemoval = false)
 @Transactional(readOnly = true)
 public class SectorTrendAnalysisService {
 

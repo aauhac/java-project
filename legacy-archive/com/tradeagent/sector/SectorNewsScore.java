@@ -21,6 +21,7 @@ import java.time.LocalDateTime;
                 @Index(name = "idx_sector_news_score_code_date", columnList = "sector_code, score_date")
         }
 )
+@Deprecated(forRemoval = false)
 public class SectorNewsScore extends BaseEntity {
 
     @Column(name = "sector_code", nullable = false, length = 16)

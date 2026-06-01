@@ -3,14 +3,13 @@ package com.tradeagent.config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.stereotype.Component;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
 
-@Component
+@Deprecated(forRemoval = false)
 public class SectorScoreSchemaInitializer implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(SectorScoreSchemaInitializer.class);

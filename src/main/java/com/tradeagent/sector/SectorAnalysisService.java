@@ -24,31 +24,21 @@ public class SectorAnalysisService {
     private final SymbolSectorMapRepository symbolSectorMapRepository;
     private final SectorProxyRepository sectorProxyRepository;
     private final SectorScoreRepository sectorScoreRepository;
-    private final SectorScoreCalculator sectorScoreCalculator;
-    private final NewsSignalAggregator newsSignalAggregator;
 
     public SectorAnalysisService(SectorMasterRepository sectorMasterRepository,
                                  SymbolSectorMapRepository symbolSectorMapRepository,
                                  SectorProxyRepository sectorProxyRepository,
-                                 SectorScoreRepository sectorScoreRepository,
-                                 SectorScoreCalculator sectorScoreCalculator,
-                                 NewsSignalAggregator newsSignalAggregator) {
+                                 SectorScoreRepository sectorScoreRepository) {
         this.sectorMasterRepository = sectorMasterRepository;
         this.symbolSectorMapRepository = symbolSectorMapRepository;
         this.sectorProxyRepository = sectorProxyRepository;
         this.sectorScoreRepository = sectorScoreRepository;
-        this.sectorScoreCalculator = sectorScoreCalculator;
-        this.newsSignalAggregator = newsSignalAggregator;
     }
 
     @Transactional
     public List<SectorScoreDto> calculateTodaySectorScores() {
-        ensureSeedData();
-        LocalDate today = DateTimeUtil.today();
-        return sectorMasterRepository.findAllByOrderBySectorCodeAsc().stream()
-                .map(master -> upsertSectorScore(master, today))
-                .sorted(Comparator.comparing(SectorScoreDto::totalSectorScore).reversed())
-                .toList();
+        // 과제 단순화: 분석 버튼은 외부 호출 없이 DB 조회만 수행
+        return getLatestSectorScores();
     }
 
     @Transactional
@@ -57,7 +47,7 @@ public class SectorAnalysisService {
         return sectorMasterRepository.findAllByOrderBySectorCodeAsc().stream()
                 .map(master -> sectorScoreRepository.findTopBySectorCodeOrderByScoreDateDesc(master.getSectorCode())
                         .map(score -> toDto(master, score))
-                        .orElseGet(() -> upsertSectorScore(master, DateTimeUtil.today())))
+                        .orElseGet(() -> emptyDto(master, DateTimeUtil.today())))
                 .sorted(Comparator.comparing(SectorScoreDto::totalSectorScore).reversed())
                 .toList();
     }
@@ -79,7 +69,7 @@ public class SectorAnalysisService {
                         "sector not found for code " + resolvedSectorCode));
         return sectorScoreRepository.findTopBySectorCodeOrderByScoreDateDesc(resolvedSectorCode)
                 .map(score -> toDto(master, score))
-                .orElseGet(() -> upsertSectorScore(master, DateTimeUtil.today()));
+                .orElseGet(() -> emptyDto(master, DateTimeUtil.today()));
     }
 
     @Transactional
@@ -90,38 +80,8 @@ public class SectorAnalysisService {
                 .orElseThrow(() -> new NotFoundException(ErrorCode.SECTOR_NOT_FOUND,
                         "sector not found for code " + resolvedSectorCode));
 
-        return newsSignalAggregator.getNewsEvents(resolvedSectorCode, DateTimeUtil.today()).stream()
-                .sorted(Comparator.comparing(NewsEvent::getPublishedAt).reversed())
-                .map(event -> new NewsEventDto(
-                        event.getSectorCode(),
-                        event.getSymbol(),
-                        event.getTitle(),
-                        event.getSource(),
-                        event.getUrl(),
-                        event.getToneScore().setScale(2, RoundingMode.HALF_UP),
-                        event.getPublishedAt()
-                ))
-                .toList();
-    }
-
-    private SectorScoreDto upsertSectorScore(SectorMaster master, LocalDate date) {
-        SectorScore calculated = sectorScoreCalculator.calculate(master.getSectorCode(), date);
-        SectorScore saved = sectorScoreRepository.findBySectorCodeAndScoreDate(master.getSectorCode(), date)
-                .map(existing -> {
-                    existing.updateScores(
-                            calculated.getNewsVolumeScore(),
-                            calculated.getNewsToneScore(),
-                            calculated.getPriceMomentumScore(),
-                            calculated.getVolumeSpikeScore(),
-                            calculated.getBreadthScore(),
-                            calculated.getTotalSectorScore(),
-                            calculated.getStatus(),
-                            calculated.getAnalyzedAt()
-                    );
-                    return sectorScoreRepository.save(existing);
-                })
-                .orElseGet(() -> sectorScoreRepository.save(calculated));
-        return toDto(master, saved);
+        // Raw GKG 전환 후 개별 뉴스 이벤트 저장을 제거했으므로 빈 목록 반환
+        return List.of();
     }
 
     private SectorScoreDto toDto(SectorMaster master, SectorScore score) {
@@ -136,6 +96,22 @@ public class SectorAnalysisService {
                 score.getBreadthScore().setScale(2, RoundingMode.HALF_UP),
                 score.getTotalSectorScore().setScale(2, RoundingMode.HALF_UP),
                 score.getStatus()
+        );
+    }
+
+    private SectorScoreDto emptyDto(SectorMaster master, LocalDate date) {
+        BigDecimal zero = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        return new SectorScoreDto(
+                master.getSectorCode(),
+                master.getSectorName(),
+                date,
+                zero,
+                zero,
+                zero,
+                zero,
+                zero,
+                zero,
+                "NEUTRAL"
         );
     }
 
