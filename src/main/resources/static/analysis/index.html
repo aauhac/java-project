@@ -66,8 +66,8 @@
                     기준 날짜
                     <input class="input" id="trend-date" type="date">
                 </label>
-                <button class="button secondary" id="view-trend-button" type="button" style="align-self: end;">동향 보기</button>
-                <button class="button" id="refresh-trend-button" type="button" style="align-self: end;">뉴스 갱신</button>
+                <button class="button secondary" id="view-trend-button" type="button" style="align-self: end;">뉴스 갱신</button>
+                <button class="button" id="refresh-trend-button" type="button" style="align-self: end;">동향 보기</button>
             </div>
         </div>
         <div id="sector-scoreboard" class="grid cols-4"></div>
@@ -289,7 +289,7 @@
     function renderScores(scores) {
         const host = document.getElementById('sector-scoreboard');
         if (!scores.length) {
-            host.innerHTML = Layout.empty('저장된 섹터 동향 데이터가 없습니다. 동향 분석 버튼을 눌러주세요.');
+            host.innerHTML = Layout.empty('저장된 뉴스 데이터가 없습니다. 뉴스 갱신 버튼을 눌러주세요.');
             return;
         }
         host.innerHTML = scores.map(score => `
@@ -408,7 +408,7 @@
             renderExposure(hasStoredTrendData(trendMatchResponse.data) ? (trendMatchResponse.data?.exposures || []) : []);
             const hasArticles = (trendsResponse.data || []).some(score => Number(score.articleCount || 0) > 0);
             if (refreshNews && !hasArticles) {
-                statusHost.innerHTML = Layout.alert('뉴스 갱신은 완료됐지만 기사 수집이 0건입니다. 잠시 후 다시 시도하거나 강제 재갱신(force)로 확인하세요.', 'warning');
+                statusHost.innerHTML = Layout.alert('뉴스 갱신은 완료됐지만 기사 수집이 0건입니다. 날짜를 바꿔 다시 시도하세요.', 'warning');
             } else {
                 statusHost.innerHTML = Layout.alert(refreshNews ? '뉴스 갱신이 완료되었습니다.' : '날짜별 섹터 동향을 불러왔습니다.', 'success');
             }

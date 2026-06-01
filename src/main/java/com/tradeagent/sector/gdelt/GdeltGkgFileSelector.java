@@ -23,15 +23,22 @@ public class GdeltGkgFileSelector {
             return List.of();
         }
 
+        // 오늘(D-0) 이후 날짜는 제외 — 마지막 날은 어제(D-1)까지
+        LocalDate exclusiveEnd = LocalDate.now(); // today is exclusive (not included)
+
         Map<LocalDate, List<GdeltRawFileRef>> refsByDate = refs.stream()
                 .collect(Collectors.groupingBy(ref -> ref.timestamp().toLocalDate()));
 
         List<GdeltRawFileRef> selected = new ArrayList<>();
         for (int offset = 0; offset < days; offset++) {
             LocalDate date = startDate.plusDays(offset);
+            // 오늘 또는 미래 날짜는 건너뜀
+            if (!date.isBefore(exclusiveEnd)) {
+                continue;
+            }
             List<GdeltRawFileRef> dailyRefs = refsByDate.getOrDefault(date, List.of());
             if (dailyRefs.isEmpty()) {
-                continue;
+                continue; // masterfilelist에 해당 날짜 파일이 없으면 건너뜀
             }
             LocalDateTime target = LocalDateTime.of(date, sampleTime);
             GdeltRawFileRef nearest = dailyRefs.stream()

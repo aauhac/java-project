@@ -43,20 +43,33 @@ public class GdeltRawNewsProvider {
             throw new ExternalApiException(ErrorCode.GDELT_API_ERROR, "GDELT raw ingestion is disabled");
         }
 
-        LocalDate resolvedStartDate = startDate != null ? startDate : LocalDate.now().minusDays(properties.getDefaultDays() - 1L);
-        int resolvedDays = days > 0 ? Math.min(days, properties.getSelectedFilesPerRefresh()) : properties.getDefaultDays();
+        // 기본 범위: 어제(D-1) ~ 30일 전(D-30), 존재하는 파일만 선택
+        int resolvedDays = (days > 0 && days <= properties.getSelectedFilesPerRefresh())
+                ? days
+                : Math.min(properties.getDefaultDays(), properties.getSelectedFilesPerRefresh());
+        // startDate가 없으면 오늘-resolvedDays일 (= 어제가 마지막 날이 되도록 today-30 기준)
+        LocalDate resolvedStartDate = startDate != null
+                ? startDate
+                : LocalDate.now().minusDays(resolvedDays); // today-30 → range: [today-30, today-1]
         LocalTime resolvedSampleTime = sampleTime != null
                 ? sampleTime
                 : LocalTime.of(properties.getDefaultSampleTime() / 100, properties.getDefaultSampleTime() % 100);
 
         List<GdeltRawFileRef> refs = fileListClient.fetchGkgFileRefs();
+        // masterfilelist에서 존재하는 파일 기준으로 하루 1개씩 선택
         List<GdeltRawFileRef> selected = fileSelector.selectDailySamples(refs, resolvedStartDate, resolvedDays, resolvedSampleTime);
         List<Path> files = new ArrayList<>();
         List<GdeltGkgRecord> records = new ArrayList<>();
         for (GdeltRawFileRef ref : selected) {
-            Path file = fileDownloader.downloadIfAbsent(ref);
-            files.add(file);
-            records.addAll(csvParser.parse(file, properties.getMaxRowsPerFile()));
+            try {
+                Path file = fileDownloader.downloadIfAbsent(ref);
+                files.add(file);
+                records.addAll(csvParser.parse(file, properties.getMaxRowsPerFile()));
+            } catch (Exception ex) {
+                // 개별 파일 실패는 건너뛰고 계속
+                org.slf4j.LoggerFactory.getLogger(GdeltRawNewsProvider.class)
+                        .warn("Skipping GDELT file {}: {}", ref.filename(), ex.getMessage());
+            }
         }
         fileCache.enforceMaxFiles(properties.getMaxCachedFiles());
         return new GdeltRawSample(

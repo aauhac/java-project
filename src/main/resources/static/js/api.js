@@ -118,7 +118,10 @@
                 request(`/api/sectors/user/${userId}/trend-match${buildQuery({date})}`)
             ]).then(([trends, trendMatch]) => ({data: {trends: trends.data || [], trendMatch: trendMatch.data || null}}));
         },
-        getSectorTrends(date) {
+        getSectorTrends(date, to) {
+            if (to !== undefined) {
+                return request(`/api/sectors/trends${buildQuery({from: date, to})}`);
+            }
             return request(`/api/sectors/trends${buildQuery({from: date, to: date})}`);
         },
         getSectorTrendHistory(sectorCode, from, to) {
@@ -129,9 +132,6 @@
         },
         getSectorDiagnostic(userId = 1) {
             return request(`/api/sectors/user/${userId}/diagnostic`);
-        },
-        getGdeltStatus() {
-            return request('/api/sectors/gdelt-status');
         },
         getSectorFeedback(userId = 1) {
             return request(`/api/feedback/${userId}/sector`);

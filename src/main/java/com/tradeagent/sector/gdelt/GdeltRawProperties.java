@@ -6,10 +6,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class GdeltRawProperties {
 
     private boolean enabled = true;
-    private String masterFileListUrl = "https://data.gdeltproject.org/gdeltv2/masterfilelist.txt";
+    private String masterFileListUrl = "http://data.gdeltproject.org/gdeltv2/masterfilelist.txt";
     private String cacheDir = "./data/gdelt-raw";
     private int defaultDays = 30;
-    private int defaultSampleTime = 1930;
+    private int defaultSampleTime = 1800;
     private int maxCachedFiles = 30;
     private int maxRowsPerFile = 2000;
     private int selectedFilesPerRefresh = 30;

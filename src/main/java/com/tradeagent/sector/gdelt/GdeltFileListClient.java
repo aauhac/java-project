@@ -69,6 +69,10 @@ public class GdeltFileListClient {
             return null;
         }
         String url = parts[parts.length - 1].trim();
+        // GDELT 데이터 서버 SSL 인증서 문제 회피 — https → http 강제 변환
+        if (url.startsWith("https://")) {
+            url = "http://" + url.substring(8);
+        }
         if (!isAllowedGkgUrl(url)) {
             return null;
         }

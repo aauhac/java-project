@@ -25,8 +25,8 @@ public class MarketScheduler {
             try {
                 marketDataService.refreshLatestQuote(symbol);
             } catch (Exception e) {
-                logger.debug("Failed to refresh quote for {}: {}", symbol, e.getMessage());
-                // Gracefully continue with other symbols
+                // 슬립 재개 후 stale connection 에러 포함 — 조용히 무시하고 다음 주기에 재시도
+                logger.trace("Quote refresh skipped for {} – {}", symbol, e.getClass().getSimpleName());
             }
         });
     }

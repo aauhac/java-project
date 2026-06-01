@@ -78,6 +78,37 @@ mvnw.cmd spring-boot:run
 - `spring.datasource.*` : H2 파일 DB 설정
 - `trade.seed.*` : 초기 데이터 주입 설정
 
+## GDELT GKG Raw 정책
+
+섹터 동향 갱신은 GDELT DOC API 대신 GDELT 2.0 GKG Raw CSV(`.gkg.csv.zip`)를 사용합니다.
+
+- masterfilelist: `https://data.gdeltproject.org/gdeltv2/masterfilelist.txt`
+- 저장 경로: `./data/gdelt-raw`
+- 기본 샘플: 하루 1개(19:30 기준) x 30일 = 30개 파일
+- 캐시 파일 최대 개수: 30개
+- vLLM 호출: 섹터당 1회(최대 6회)
+
+관련 설정(`gdelt.raw.*`):
+
+- `gdelt.raw.enabled`
+- `gdelt.raw.master-file-list-url`
+- `gdelt.raw.cache-dir`
+- `gdelt.raw.default-days`
+- `gdelt.raw.default-sample-time`
+- `gdelt.raw.max-cached-files`
+- `gdelt.raw.max-rows-per-file`
+- `gdelt.raw.selected-files-per-refresh`
+- `gdelt.raw.request-timeout-seconds`
+
+## 섹터 동향 API
+
+- `POST /api/sectors/refresh-news?startDate=2026-04-30&days=30&sampleTime=1930`
+  - GKG Raw 파일 기반 뉴스 갱신 및 `sector_score` 저장
+- `GET /api/sectors/trends?from=2026-04-30&to=2026-05-29`
+  - 저장된 섹터 점수 조회 (외부 API 호출 없음)
+- `GET /api/sectors/user/{userId}/trend-match?date=2026-05-29`
+  - 저장 점수와 포트폴리오 비중 비교
+
 ## 환경 변수
 
 필수는 아니지만, 외부 API를 사용할 때 아래 값을 넣을 수 있습니다.
