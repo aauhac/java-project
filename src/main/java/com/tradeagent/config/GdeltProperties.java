@@ -3,6 +3,7 @@ package com.tradeagent.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "gdelt")
+@Deprecated(forRemoval = false)
 public class GdeltProperties {
 
     private String baseUrl = "https://api.gdeltproject.org/api/v2";

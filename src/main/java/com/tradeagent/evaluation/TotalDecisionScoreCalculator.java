@@ -2,36 +2,36 @@ package com.tradeagent.evaluation;
 
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-
 @Component
 public class TotalDecisionScoreCalculator {
 
-    public BigDecimal calculate(BigDecimal entryScore,
-                                BigDecimal exitScore,
-                                BigDecimal riskScore,
-                                BigDecimal diversificationScore,
-                                BigDecimal sectorFitScore) {
-        BigDecimal total = safe(entryScore).multiply(BigDecimal.valueOf(0.25))
-                .add(safe(exitScore).multiply(BigDecimal.valueOf(0.25)))
-                .add(safe(riskScore).multiply(BigDecimal.valueOf(0.20)))
-                .add(safe(diversificationScore).multiply(BigDecimal.valueOf(0.15)))
-                .add(safe(sectorFitScore).multiply(BigDecimal.valueOf(0.15)));
-
-        return total.setScale(2, RoundingMode.HALF_UP);
+    public double calculate(double entryScore,
+                            double exitScore,
+                            double riskScore,
+                            double diversificationScore,
+                            double sectorFitScore) {
+        double total = safe(entryScore) * 0.25
+                + safe(exitScore) * 0.25
+                + safe(riskScore) * 0.20
+                + safe(diversificationScore) * 0.15
+                + safe(sectorFitScore) * 0.15;
+        return clamp(total);
     }
 
-    private BigDecimal safe(BigDecimal score) {
-        if (score == null) {
-            return BigDecimal.valueOf(50).setScale(2, RoundingMode.HALF_UP);
+    private double safe(double score) {
+        if (!Double.isFinite(score)) {
+            return 50.0;
         }
-        if (score.compareTo(BigDecimal.ZERO) < 0) {
-            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        return clamp(score);
+    }
+
+    private double clamp(double score) {
+        if (score < 0) {
+            return 0.0;
         }
-        if (score.compareTo(BigDecimal.valueOf(100)) > 0) {
-            return BigDecimal.valueOf(100).setScale(2, RoundingMode.HALF_UP);
+        if (score > 100) {
+            return 100.0;
         }
-        return score.setScale(2, RoundingMode.HALF_UP);
+        return Math.round(score * 100.0) / 100.0;
     }
 }

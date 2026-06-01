@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Optional;
 
+@Deprecated(forRemoval = false)
 public final class GdeltSupport {
 
     private GdeltSupport() {

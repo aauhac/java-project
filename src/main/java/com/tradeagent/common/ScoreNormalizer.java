@@ -1,5 +1,6 @@
 package com.tradeagent.common;
 
+@Deprecated(forRemoval = true)
 public final class ScoreNormalizer {
 
     private ScoreNormalizer() {}

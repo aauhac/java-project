@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 @Component
 public class SectorRecordClassifier {
@@ -36,20 +37,36 @@ public class SectorRecordClassifier {
 
     private boolean matches(String sectorCode, String haystack) {
         for (String keyword : keywordProvider.getStrongKeywords(sectorCode)) {
-            if (haystack.contains(keyword.toLowerCase(Locale.ROOT))) {
+            if (containsKeyword(haystack, keyword)) {
                 return true;
             }
         }
         int supportHits = 0;
         for (String keyword : keywordProvider.getSupportKeywords(sectorCode)) {
-            if (keyword.length() <= 2) {
+            if (!isSafeKeyword(keyword)) {
                 continue;
             }
-            if (haystack.contains(keyword.toLowerCase(Locale.ROOT))) {
+            if (containsKeyword(haystack, keyword)) {
                 supportHits++;
             }
         }
         return supportHits >= 2;
+    }
+
+    private boolean isSafeKeyword(String keyword) {
+        return keyword != null && keyword.trim().length() >= 3;
+    }
+
+    private boolean containsKeyword(String haystack, String keyword) {
+        if (!isSafeKeyword(keyword)) {
+            return false;
+        }
+        String normalized = keyword.toLowerCase(Locale.ROOT).trim();
+        if (normalized.contains(" ") || normalized.contains("_")) {
+            return haystack.contains(normalized);
+        }
+        Pattern pattern = Pattern.compile("\\b" + Pattern.quote(normalized) + "\\b");
+        return pattern.matcher(haystack).find();
     }
 
     private String buildHaystack(GdeltGkgRecord record) {

@@ -4,35 +4,30 @@ import com.tradeagent.evaluation.EvaluationModels.RiskScoreInput;
 import com.tradeagent.market.PriceBar;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.Comparator;
 
 @Component
 public class RiskScoreCalculator extends AbstractScoreCalculator<RiskScoreInput> {
 
     @Override
-    public BigDecimal calculate(RiskScoreInput input) {
-        BigDecimal buyPrice = input.buyTrade().getPrice();
-        if (buyPrice == null || buyPrice.compareTo(BigDecimal.ZERO) <= 0) {
+    public double calculate(RiskScoreInput input) {
+        if (input == null || input.buyTrade() == null || input.buyTrade().getPrice() == null) {
+            return neutralScore();
+        }
+        double buyPrice = input.buyTrade().getPrice().doubleValue();
+        if (!Double.isFinite(buyPrice) || buyPrice <= 0) {
             return neutralScore();
         }
 
-        BigDecimal minLow = input.holdingBars().stream()
+        double minLow = input.holdingBars().stream()
                 .map(PriceBar::getLowPrice)
                 .min(Comparator.naturalOrder())
+                .map(java.math.BigDecimal::doubleValue)
                 .orElse(buyPrice);
 
-        BigDecimal drawdown = buyPrice.subtract(minLow);
-        if (drawdown.compareTo(BigDecimal.ZERO) < 0) {
-            drawdown = BigDecimal.ZERO;
-        }
-
-        BigDecimal drawdownPercent = drawdown
-                .divide(buyPrice, 6, RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(100));
-
-        BigDecimal penalty = normalize(drawdownPercent, BigDecimal.ZERO, BigDecimal.valueOf(15));
-        return clamp(BigDecimal.valueOf(100).subtract(penalty));
+        double drawdown = Math.max(0.0, buyPrice - minLow);
+        double drawdownPercent = (drawdown / buyPrice) * 100.0;
+        double penalty = normalize(drawdownPercent, 0.0, 15.0);
+        return clamp(100.0 - penalty);
     }
 }

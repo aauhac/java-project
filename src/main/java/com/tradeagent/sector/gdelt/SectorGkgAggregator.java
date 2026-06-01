@@ -16,15 +16,20 @@ import java.util.stream.Collectors;
 @Component
 public class SectorGkgAggregator {
 
+    private final SectorRecordRanker sectorRecordRanker;
+
+    public SectorGkgAggregator(SectorRecordRanker sectorRecordRanker) {
+        this.sectorRecordRanker = sectorRecordRanker;
+    }
+
     public List<SectorRecordGroup> aggregate(Map<String, List<GdeltGkgRecord>> classifiedRecords) {
-        int maxArticleCount = classifiedRecords.values().stream().mapToInt(List::size).max().orElse(0);
         return classifiedRecords.entrySet().stream()
-                .map(entry -> buildGroup(entry.getKey(), entry.getValue(), maxArticleCount))
+                .map(entry -> buildGroup(entry.getKey(), entry.getValue()))
                 .sorted(Comparator.comparing(SectorRecordGroup::sectorCode))
                 .toList();
     }
 
-    private SectorRecordGroup buildGroup(String sectorCode, List<GdeltGkgRecord> records, int maxArticleCount) {
+    private SectorRecordGroup buildGroup(String sectorCode, List<GdeltGkgRecord> records) {
         int articleCount = records.size();
         BigDecimal avgTone = records.isEmpty()
                 ? BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP)
@@ -38,12 +43,8 @@ public class SectorGkgAggregator {
                 .max(BigDecimal.ZERO)
                 .min(BigDecimal.valueOf(100))
                 .setScale(2, RoundingMode.HALF_UP);
-        BigDecimal keywordStrengthScore = maxArticleCount <= 0
-                ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
-                : BigDecimal.valueOf(articleCount)
-                .multiply(BigDecimal.valueOf(100))
-                .divide(BigDecimal.valueOf(maxArticleCount), 2, RoundingMode.HALF_UP)
-                .min(BigDecimal.valueOf(100));
+        BigDecimal keywordStrengthScore = computeKeywordStrengthScore(sectorCode, records);
+        List<GdeltGkgRecord> sampleRecords = sectorRecordRanker.selectTopRecords(sectorCode, records, 20);
 
         return new SectorRecordGroup(
                 sectorCode,
@@ -52,9 +53,44 @@ public class SectorGkgAggregator {
                 avgTone,
                 toneScore,
                 keywordStrengthScore,
-                topValues(records, GdeltGkgRecord::v2Themes),
-                topValues(records, GdeltGkgRecord::v2Organizations),
-                records.stream().limit(5).toList()
+                topThemes(records),
+                topOrganizations(records),
+                sampleRecords
+        );
+    }
+
+    private BigDecimal computeKeywordStrengthScore(String sectorCode, List<GdeltGkgRecord> records) {
+        if (records.isEmpty()) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        double averageScore = records.stream()
+                .mapToInt(record -> sectorRecordRanker.scoreRecord(sectorCode, record))
+                .average()
+                .orElse(0.0d);
+        // scoreRecord upper-bound is effectively around 60 in current weights.
+        BigDecimal normalized = BigDecimal.valueOf(averageScore)
+                .multiply(BigDecimal.valueOf(100))
+                .divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
+        if (normalized.compareTo(BigDecimal.ZERO) < 0) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        if (normalized.compareTo(BigDecimal.valueOf(100)) > 0) {
+            return BigDecimal.valueOf(100).setScale(2, RoundingMode.HALF_UP);
+        }
+        return normalized.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private List<String> topThemes(List<GdeltGkgRecord> records) {
+        return topValues(records, record ->
+                (record.themes() == null ? "" : record.themes()) + ";" +
+                        (record.v2Themes() == null ? "" : record.v2Themes())
+        );
+    }
+
+    private List<String> topOrganizations(List<GdeltGkgRecord> records) {
+        return topValues(records, record ->
+                (record.organizations() == null ? "" : record.organizations()) + ";" +
+                        (record.v2Organizations() == null ? "" : record.v2Organizations())
         );
     }
 
@@ -69,7 +105,7 @@ public class SectorGkgAggregator {
 
         return counts.entrySet().stream()
                 .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
-                .limit(5)
+                .limit(10)
                 .map(Map.Entry::getKey)
                 .toList();
     }

@@ -31,3 +31,28 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Local secrets / env ###
+.env
+.env.*
+!.env.example
+src/main/resources/application-local.properties
+src/main/resources/application-*.local.properties
+src/main/resources/application.properties.local
+src/main/resources/application.properties.bak
+*.pem
+*.key
+*.p12
+*.jks
+secrets/
+
+### Runtime data / caches ###
+data/gdelt-raw/
+data/gdelt-cache/
+data/*.db
+data/*.mv.db
+data/*.trace.db
+logs/
+
+### Git history rewrite helpers ###
+replacements.txt

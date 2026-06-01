@@ -1,39 +1,24 @@
 package com.tradeagent.evaluation;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-
 public abstract class AbstractScoreCalculator<T> implements ScoreCalculator<T> {
 
-    protected BigDecimal clamp(BigDecimal score) {
-        if (score == null) {
-            return neutralScore();
-        }
-        if (score.compareTo(BigDecimal.ZERO) < 0) {
-            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-        }
-        if (score.compareTo(BigDecimal.valueOf(100)) > 0) {
-            return BigDecimal.valueOf(100).setScale(2, RoundingMode.HALF_UP);
-        }
-        return score.setScale(2, RoundingMode.HALF_UP);
+    protected double clamp(double score) {
+        if (!Double.isFinite(score)) return neutralScore();
+        if (score < 0) return 0.0;
+        if (score > 100) return 100.0;
+        return Math.round(score * 100.0) / 100.0;
     }
 
-    protected BigDecimal normalize(BigDecimal value, BigDecimal min, BigDecimal max) {
-        if (value == null || min == null || max == null) {
+    protected double normalize(double value, double min, double max) {
+        if (!Double.isFinite(value) || !Double.isFinite(min) || !Double.isFinite(max)) {
             return neutralScore();
         }
-        if (max.compareTo(min) == 0) {
-            return neutralScore();
-        }
+        if (max == min) return neutralScore();
 
-        BigDecimal normalized = value.subtract(min)
-                .divide(max.subtract(min), 6, RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(100));
-
-        return clamp(normalized);
+        return clamp((value - min) / (max - min) * 100.0);
     }
 
-    protected BigDecimal neutralScore() {
-        return BigDecimal.valueOf(50).setScale(2, RoundingMode.HALF_UP);
+    protected double neutralScore() {
+        return 50.0;
     }
 }

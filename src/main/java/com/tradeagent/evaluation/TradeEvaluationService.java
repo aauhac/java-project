@@ -151,36 +151,36 @@ public class TradeEvaluationService {
         TradePairContext tradePairContext = resolveTradePair(tradeHistory);
         List<PortfolioPosition> positions = portfolioRepository.findByUserId(tradeHistory.getUserId());
 
-        BigDecimal entryScore = tradePairContext.buyTrade() != null
+        double entryScore = tradePairContext.buyTrade() != null
                 ? entryScoreCalculator.calculate(new EntryScoreInput(
                 tradePairContext.buyTrade(),
                 loadBarsAfterEntry(tradePairContext.buyTrade())
         ))
                 : neutralScore();
-        BigDecimal exitScore = tradePairContext.sellTrade() != null
+        double exitScore = tradePairContext.sellTrade() != null
                 ? exitScoreCalculator.calculate(new ExitScoreInput(
                 tradePairContext.sellTrade(),
                 loadBarsAroundExit(tradePairContext.sellTrade())
         ))
                 : neutralScore();
-        BigDecimal riskScore = tradePairContext.buyTrade() != null
+        double riskScore = tradePairContext.buyTrade() != null
                 ? riskScoreCalculator.calculate(new RiskScoreInput(
                 tradePairContext.buyTrade(),
                 tradePairContext.sellTrade(),
                 loadHoldingBars(tradePairContext.buyTrade(), tradePairContext.sellTrade())
         ))
                 : neutralScore();
-        BigDecimal diversificationScore = diversificationScoreCalculator.calculate(new DiversificationScoreInput(
+        double diversificationScore = diversificationScoreCalculator.calculate(new DiversificationScoreInput(
                 tradeHistory.getUserId(),
                 positions
         ));
-        BigDecimal sectorFitScore = sectorFitScoreCalculator.calculate(new SectorFitScoreInput(
+        double sectorFitScore = sectorFitScoreCalculator.calculate(new SectorFitScoreInput(
                 tradeHistory.getSymbol(),
                 tradeHistory.getSectorCode(),
                 tradeHistory.getTradedAt().toLocalDate(),
                 null
         ));
-        BigDecimal totalScore = totalDecisionScoreCalculator.calculate(
+        double totalScore = totalDecisionScoreCalculator.calculate(
                 entryScore,
                 exitScore,
                 riskScore,
@@ -201,12 +201,12 @@ public class TradeEvaluationService {
         try {
             return tradeEvaluationRepository.save(new TradeEvaluation(
                     tradeHistory.getId(),
-                    scores.entry(),
-                    scores.exit(),
-                    scores.risk(),
-                    scores.diversification(),
-                    scores.sectorFit(),
-                    scores.total(),
+                    toScore(scores.entry()),
+                    toScore(scores.exit()),
+                    toScore(scores.risk()),
+                    toScore(scores.diversification()),
+                    toScore(scores.sectorFit()),
+                    toScore(scores.total()),
                     DateTimeUtil.nowUtc()
             ));
         } catch (DataIntegrityViolationException e) {
@@ -218,12 +218,12 @@ public class TradeEvaluationService {
 
     private TradeEvaluation updateAndSave(TradeEvaluation evaluation, EvaluationScores scores) {
         evaluation.updateScores(
-                scores.entry(),
-                scores.exit(),
-                scores.risk(),
-                scores.diversification(),
-                scores.sectorFit(),
-                scores.total(),
+                toScore(scores.entry()),
+                toScore(scores.exit()),
+                toScore(scores.risk()),
+                toScore(scores.diversification()),
+                toScore(scores.sectorFit()),
+                toScore(scores.total()),
                 DateTimeUtil.nowUtc()
         );
         return tradeEvaluationRepository.save(evaluation);
@@ -354,20 +354,24 @@ public class TradeEvaluationService {
         return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal neutralScore() {
-        return BigDecimal.valueOf(50).setScale(2, RoundingMode.HALF_UP);
+    private double neutralScore() {
+        return 50.0;
+    }
+
+    private BigDecimal toScore(double value) {
+        return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP);
     }
 
     private record TradePairContext(TradeHistory buyTrade, TradeHistory sellTrade) {
     }
 
     private record EvaluationScores(
-            BigDecimal entry,
-            BigDecimal exit,
-            BigDecimal risk,
-            BigDecimal diversification,
-            BigDecimal sectorFit,
-            BigDecimal total
+            double entry,
+            double exit,
+            double risk,
+            double diversification,
+            double sectorFit,
+            double total
     ) {
     }
 }

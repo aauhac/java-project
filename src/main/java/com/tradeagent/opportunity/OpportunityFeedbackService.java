@@ -1,9 +1,8 @@
 package com.tradeagent.opportunity;
 
 import com.tradeagent.opportunity.OpportunityApiModels.BetterTimingDto;
-import org.springframework.stereotype.Service;
 
-@Service
+@Deprecated(forRemoval = false)
 public class OpportunityFeedbackService {
 
     public String buildMissedOpportunityFeedback(MissedOpportunity item) {

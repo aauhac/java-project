@@ -4,36 +4,30 @@ import com.tradeagent.evaluation.EvaluationModels.DiversificationScoreInput;
 import com.tradeagent.portfolio.PortfolioPosition;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.Comparator;
 
 @Component
 public class DiversificationScoreCalculator extends AbstractScoreCalculator<DiversificationScoreInput> {
 
     @Override
-    public BigDecimal calculate(DiversificationScoreInput input) {
-        BigDecimal totalAmount = input.positions().stream()
+    public double calculate(DiversificationScoreInput input) {
+        double totalAmount = input.positions().stream()
                 .map(PortfolioPosition::getTotalBuyAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+                .mapToDouble(java.math.BigDecimal::doubleValue)
+                .sum();
 
-        if (totalAmount.compareTo(BigDecimal.ZERO) <= 0) {
+        if (totalAmount <= 0) {
             return neutralScore();
         }
 
-        BigDecimal maxWeight = input.positions().stream()
-                .map(position -> position.getTotalBuyAmount()
-                        .divide(totalAmount, 6, RoundingMode.HALF_UP)
-                        .multiply(BigDecimal.valueOf(100)))
+        double maxWeight = input.positions().stream()
+                .map(position -> (position.getTotalBuyAmount().doubleValue() / totalAmount) * 100.0)
                 .max(Comparator.naturalOrder())
-                .orElse(BigDecimal.valueOf(100));
+                .orElse(100.0);
 
-        BigDecimal concentrationScore = clamp(BigDecimal.valueOf(100)
-                .subtract(normalize(maxWeight, BigDecimal.valueOf(20), BigDecimal.valueOf(80))));
-        BigDecimal positionCountScore = normalize(BigDecimal.valueOf(input.positions().size()), BigDecimal.ONE, BigDecimal.valueOf(8));
-
-        BigDecimal weighted = concentrationScore.multiply(BigDecimal.valueOf(0.7))
-                .add(positionCountScore.multiply(BigDecimal.valueOf(0.3)));
+        double concentrationScore = clamp(100.0 - normalize(maxWeight, 20.0, 80.0));
+        double positionCountScore = normalize(input.positions().size(), 1.0, 8.0);
+        double weighted = concentrationScore * 0.7 + positionCountScore * 0.3;
         return clamp(weighted);
     }
 }

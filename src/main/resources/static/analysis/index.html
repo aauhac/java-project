@@ -393,9 +393,11 @@
         try {
             let trendsResponse;
             let trendMatchResponse;
+            let refreshMeta = null;
             if (refreshNews) {
                 const response = await API.refreshSectorNews(trendState.selectedDate, 30, 1930);
                 trendsResponse = {data: response.data?.trends || []};
+                refreshMeta = response.data || null;
                 trendMatchResponse = await API.getPortfolioTrendMatch(1, trendState.selectedDate);
             } else {
                 [trendsResponse, trendMatchResponse] = await Promise.all([
@@ -408,7 +410,15 @@
             renderExposure(hasStoredTrendData(trendMatchResponse.data) ? (trendMatchResponse.data?.exposures || []) : []);
             const hasArticles = (trendsResponse.data || []).some(score => Number(score.articleCount || 0) > 0);
             if (refreshNews && !hasArticles) {
-                statusHost.innerHTML = Layout.alert('뉴스 갱신은 완료됐지만 기사 수집이 0건입니다. 날짜를 바꿔 다시 시도하세요.', 'warning');
+                const sampleFileCount = Number(refreshMeta?.sampleFileCount || 0);
+                const rawRecordCount = Number(refreshMeta?.rawRecordCount || 0);
+                if (sampleFileCount === 0) {
+                    statusHost.innerHTML = Layout.alert('뉴스 갱신은 완료됐지만 선택된 GKG 파일이 0개입니다. 날짜 범위를 바꿔 다시 시도하세요.', 'warning');
+                } else if (rawRecordCount === 0) {
+                    statusHost.innerHTML = Layout.alert(`뉴스 갱신은 완료됐지만 파싱된 GKG 레코드가 0건입니다. (파일 ${sampleFileCount}개)`, 'warning');
+                } else {
+                    statusHost.innerHTML = Layout.alert(`뉴스 갱신은 완료됐지만 섹터 키워드 매칭 결과가 0건입니다. (파일 ${sampleFileCount}개 / 레코드 ${rawRecordCount}건)`, 'warning');
+                }
             } else {
                 statusHost.innerHTML = Layout.alert(refreshNews ? '뉴스 갱신이 완료되었습니다.' : '날짜별 섹터 동향을 불러왔습니다.', 'success');
             }

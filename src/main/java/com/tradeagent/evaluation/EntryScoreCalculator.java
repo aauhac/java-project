@@ -4,24 +4,26 @@ import com.tradeagent.evaluation.EvaluationModels.EntryScoreInput;
 import com.tradeagent.market.PriceBar;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
 import java.util.Comparator;
 
 @Component
 public class EntryScoreCalculator extends AbstractScoreCalculator<EntryScoreInput> {
 
     @Override
-    public BigDecimal calculate(EntryScoreInput input) {
-        BigDecimal minPrice = input.barsAfterEntry().stream()
+    public double calculate(EntryScoreInput input) {
+        double minPrice = input.barsAfterEntry().stream()
                 .map(PriceBar::getLowPrice)
                 .min(Comparator.naturalOrder())
-                .orElse(null);
-        BigDecimal maxPrice = input.barsAfterEntry().stream()
+                .map(java.math.BigDecimal::doubleValue)
+                .orElse(Double.NaN);
+        double maxPrice = input.barsAfterEntry().stream()
                 .map(PriceBar::getHighPrice)
                 .max(Comparator.naturalOrder())
-                .orElse(null);
+                .map(java.math.BigDecimal::doubleValue)
+                .orElse(Double.NaN);
 
-        BigDecimal position = normalize(input.tradeHistory().getPrice(), minPrice, maxPrice);
-        return clamp(BigDecimal.valueOf(100).subtract(position));
+        double entryPrice = input.tradeHistory().getPrice() == null ? Double.NaN : input.tradeHistory().getPrice().doubleValue();
+        double position = normalize(entryPrice, minPrice, maxPrice);
+        return clamp(100.0 - position);
     }
 }
