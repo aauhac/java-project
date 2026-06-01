@@ -107,8 +107,8 @@
         analyzeSectorTrend(date) {
             return request(`/api/sectors/trends${buildQuery({from: date, to: date})}`);
         },
-        refreshSectorNews(startDate, days = 30, sampleTime = 1930) {
-            return request(`/api/sectors/refresh-news${buildQuery({startDate, days, sampleTime})}`, {
+        refreshSectorNews() {
+            return request('/api/sectors/refresh-news', {
                 method: 'POST'
             });
         },

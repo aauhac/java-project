@@ -13,11 +13,7 @@ import java.util.stream.Stream;
 @Component
 public class GdeltRawFileCache {
 
-    private final GdeltRawProperties properties;
-
-    public GdeltRawFileCache(GdeltRawProperties properties) {
-        this.properties = properties;
-    }
+    private static final String CACHE_DIR = "./data/gdelt-raw";
 
     public void enforceMaxFiles(int maxFiles) {
         List<Path> files = listCachedGkgFiles();
@@ -34,7 +30,7 @@ public class GdeltRawFileCache {
     }
 
     public List<Path> listCachedGkgFiles() {
-        Path dir = Paths.get(properties.getCacheDir());
+        Path dir = Paths.get(CACHE_DIR);
         if (!Files.exists(dir)) {
             return List.of();
         }

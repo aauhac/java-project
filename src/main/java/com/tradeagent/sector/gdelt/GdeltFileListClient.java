@@ -22,23 +22,23 @@ import java.util.regex.Pattern;
 @Component
 public class GdeltFileListClient {
 
+    private static final String MASTER_FILE_LIST_URL = "http://data.gdeltproject.org/gdeltv2/masterfilelist.txt";
+    private static final int TIMEOUT_SECONDS = 30;
     private static final Pattern TIMESTAMP_PATTERN = Pattern.compile("(\\d{14})\\.gkg\\.csv\\.zip$");
     private static final DateTimeFormatter TIMESTAMP_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
-    private final GdeltRawProperties properties;
     private final HttpClient httpClient;
 
-    public GdeltFileListClient(GdeltRawProperties properties) {
-        this.properties = properties;
+    public GdeltFileListClient() {
         this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(properties.getRequestTimeoutSeconds()))
+                .connectTimeout(Duration.ofSeconds(TIMEOUT_SECONDS))
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .build();
     }
 
     public List<GdeltRawFileRef> fetchGkgFileRefs() {
-        HttpRequest request = HttpRequest.newBuilder(URI.create(properties.getMasterFileListUrl()))
-                .timeout(Duration.ofSeconds(properties.getRequestTimeoutSeconds()))
+        HttpRequest request = HttpRequest.newBuilder(URI.create(MASTER_FILE_LIST_URL))
+                .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
                 .header("User-Agent", "TradeAgent-GdeltRaw/1.0")
                 .GET()
                 .build();
@@ -56,8 +56,11 @@ public class GdeltFileListClient {
                     .filter(ref -> ref != null)
                     .sorted(Comparator.comparing(GdeltRawFileRef::timestamp))
                     .toList();
-        } catch (IOException | InterruptedException ex) {
+        } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
+            throw new ExternalApiException(ErrorCode.GDELT_API_ERROR,
+                    "Failed to fetch masterfilelist.txt: " + ex.getMessage());
+        } catch (IOException ex) {
             throw new ExternalApiException(ErrorCode.GDELT_API_ERROR,
                     "Failed to fetch masterfilelist.txt: " + ex.getMessage());
         }

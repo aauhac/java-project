@@ -65,13 +65,8 @@ public class SectorController {
     }
 
     @PostMapping("/refresh-news")
-    public ApiResponse<RefreshNewsResultDto> refreshNews(@RequestParam(required = false) LocalDate startDate,
-                                                         @RequestParam(required = false) Integer days,
-                                                         @RequestParam(required = false) Integer sampleTime) {
-        java.time.LocalTime resolvedSampleTime = sampleTime == null
-                ? null
-                : java.time.LocalTime.of(sampleTime / 100, sampleTime % 100);
-        return ApiResponse.ok(sectorGkgTrendService.refreshNews(startDate, days, resolvedSampleTime));
+    public ApiResponse<RefreshNewsResultDto> refreshNews() {
+        return ApiResponse.ok(sectorGkgTrendService.refreshNews());
     }
 
     @GetMapping("/trends")

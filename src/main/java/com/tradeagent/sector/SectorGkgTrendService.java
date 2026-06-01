@@ -7,7 +7,6 @@ import com.tradeagent.common.ValidationException;
 import com.tradeagent.sector.SectorApiModels.RefreshNewsResultDto;
 import com.tradeagent.sector.SectorApiModels.SectorTrendDto;
 import com.tradeagent.sector.gdelt.GdeltRawNewsProvider;
-import com.tradeagent.sector.gdelt.GdeltRawProperties;
 import com.tradeagent.sector.gdelt.SectorGkgAggregator;
 import com.tradeagent.sector.gdelt.SectorRecordClassifier;
 import com.tradeagent.sector.gdelt.dto.GdeltRawSample;
@@ -20,7 +19,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -36,10 +34,10 @@ public class SectorGkgTrendService {
     private static final BigDecimal ZERO_2 = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
     private static final BigDecimal ZERO_4 = BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
     private static final List<String> SUPPORTED_SECTORS = List.of("SEMI", "AIINF", "EV", "BIO", "CLOUD", "ENERGY");
+    private static final int MAX_ROWS_PER_FILE = 2000;
 
     private final SectorMasterRepository sectorMasterRepository;
     private final SectorScoreRepository sectorScoreRepository;
-    private final GdeltRawProperties rawProperties;
     private final GdeltRawNewsProvider rawNewsProvider;
     private final SectorRecordClassifier sectorRecordClassifier;
     private final SectorGkgAggregator sectorGkgAggregator;
@@ -47,14 +45,12 @@ public class SectorGkgTrendService {
 
     public SectorGkgTrendService(SectorMasterRepository sectorMasterRepository,
                                  SectorScoreRepository sectorScoreRepository,
-                                 GdeltRawProperties rawProperties,
                                  GdeltRawNewsProvider rawNewsProvider,
                                  SectorRecordClassifier sectorRecordClassifier,
                                  SectorGkgAggregator sectorGkgAggregator,
                                  SectorNewsSentimentService sectorNewsSentimentService) {
         this.sectorMasterRepository = sectorMasterRepository;
         this.sectorScoreRepository = sectorScoreRepository;
-        this.rawProperties = rawProperties;
         this.rawNewsProvider = rawNewsProvider;
         this.sectorRecordClassifier = sectorRecordClassifier;
         this.sectorGkgAggregator = sectorGkgAggregator;
@@ -62,15 +58,9 @@ public class SectorGkgTrendService {
     }
 
     @Transactional
-    public RefreshNewsResultDto refreshNews(LocalDate startDate, Integer days, LocalTime sampleTime) {
+    public RefreshNewsResultDto refreshNews() {
         ensureMastersExist();
-        LocalDate resolvedStartDate = startDate != null ? startDate : DateTimeUtil.today().minusDays(rawProperties.getDefaultDays() - 1L);
-        int resolvedDays = days != null && days > 0 ? days : rawProperties.getDefaultDays();
-        LocalTime resolvedSampleTime = sampleTime != null
-                ? sampleTime
-                : LocalTime.of(rawProperties.getDefaultSampleTime() / 100, rawProperties.getDefaultSampleTime() % 100);
-
-        GdeltRawSample sample = rawNewsProvider.fetchMonthlySample(resolvedStartDate, resolvedDays, resolvedSampleTime);
+        GdeltRawSample sample = rawNewsProvider.fetchMonthlySample();
         Map<String, List<com.tradeagent.sector.gdelt.dto.GdeltGkgRecord>> classified = sectorRecordClassifier.classify(sample.records());
         Map<String, List<com.tradeagent.sector.gdelt.dto.GdeltGkgRecord>> normalized = new LinkedHashMap<>();
         for (String sectorCode : SUPPORTED_SECTORS) {
@@ -172,7 +162,7 @@ public class SectorGkgTrendService {
     }
 
     private BigDecimal calculateNewsVolumeScore(int articleCount, GdeltRawSample sample) {
-        int maxPerSector = Math.max(1, Math.min(sample.rawRecordCount(), rawProperties.getMaxRowsPerFile() * Math.max(1, sample.selectedFileCount())));
+        int maxPerSector = Math.max(1, Math.min(sample.rawRecordCount(), MAX_ROWS_PER_FILE * Math.max(1, sample.selectedFileCount())));
         return BigDecimal.valueOf(articleCount)
                 .multiply(BigDecimal.valueOf(100))
                 .divide(BigDecimal.valueOf(maxPerSector), 2, RoundingMode.HALF_UP)

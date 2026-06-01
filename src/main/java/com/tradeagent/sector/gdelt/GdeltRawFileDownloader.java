@@ -18,20 +18,20 @@ import java.time.Duration;
 @Component
 public class GdeltRawFileDownloader {
 
-    private final GdeltRawProperties properties;
+    private static final String CACHE_DIR = "./data/gdelt-raw";
+    private static final int TIMEOUT_SECONDS = 30;
     private final HttpClient httpClient;
 
-    public GdeltRawFileDownloader(GdeltRawProperties properties) {
-        this.properties = properties;
+    public GdeltRawFileDownloader() {
         this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(properties.getRequestTimeoutSeconds()))
+                .connectTimeout(Duration.ofSeconds(TIMEOUT_SECONDS))
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .build();
     }
 
     public Path downloadIfAbsent(GdeltRawFileRef ref) {
         try {
-            Path cacheDir = Paths.get(properties.getCacheDir());
+            Path cacheDir = Paths.get(CACHE_DIR);
             Files.createDirectories(cacheDir);
             Path target = cacheDir.resolve(ref.filename());
             if (Files.exists(target)) {
@@ -39,7 +39,7 @@ public class GdeltRawFileDownloader {
             }
 
             HttpRequest request = HttpRequest.newBuilder(URI.create(ref.url()))
-                    .timeout(Duration.ofSeconds(properties.getRequestTimeoutSeconds()))
+                    .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
                     .header("User-Agent", "TradeAgent-GdeltRaw/1.0")
                     .GET()
                     .build();
@@ -50,8 +50,11 @@ public class GdeltRawFileDownloader {
                         "Failed to download GDELT file: HTTP " + response.statusCode() + " url=" + ref.url());
             }
             return target;
-        } catch (IOException | InterruptedException ex) {
+        } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
+            throw new ExternalApiException(ErrorCode.GDELT_API_ERROR,
+                    "Failed to download GDELT file: " + ex.getMessage());
+        } catch (IOException ex) {
             throw new ExternalApiException(ErrorCode.GDELT_API_ERROR,
                     "Failed to download GDELT file: " + ex.getMessage());
         }

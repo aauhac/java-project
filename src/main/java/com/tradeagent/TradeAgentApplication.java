@@ -3,7 +3,6 @@ package com.tradeagent;
 import com.tradeagent.chart.ChartProperties;
 import com.tradeagent.config.AlpacaProperties;
 import com.tradeagent.config.VllmProperties;
-import com.tradeagent.sector.gdelt.GdeltRawProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -12,8 +11,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 @EnableConfigurationProperties({
         ChartProperties.class,
         AlpacaProperties.class,
-        VllmProperties.class,
-        GdeltRawProperties.class
+        VllmProperties.class
 })
 public class TradeAgentApplication {
 

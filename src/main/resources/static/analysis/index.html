@@ -395,7 +395,7 @@
             let trendMatchResponse;
             let refreshMeta = null;
             if (refreshNews) {
-                const response = await API.refreshSectorNews(trendState.selectedDate, 30, 1930);
+                const response = await API.refreshSectorNews();
                 trendsResponse = {data: response.data?.trends || []};
                 refreshMeta = response.data || null;
                 trendMatchResponse = await API.getPortfolioTrendMatch(1, trendState.selectedDate);
