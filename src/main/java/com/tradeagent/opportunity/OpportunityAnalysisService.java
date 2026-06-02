@@ -1,11 +1,23 @@
 package com.tradeagent.opportunity;
 
+import com.tradeagent.common.DateTimeUtil;
+import com.tradeagent.common.TradeType;
+import com.tradeagent.market.PriceBar;
+import com.tradeagent.market.PriceBarRepository;
+import com.tradeagent.portfolio.TradeHistory;
+import com.tradeagent.portfolio.TradeHistoryRepository;
+import com.tradeagent.portfolio.WatchlistItem;
+import com.tradeagent.portfolio.WatchlistRepository;
 import com.tradeagent.opportunity.OpportunityApiModels.BetterTimingDto;
 import com.tradeagent.opportunity.OpportunityApiModels.OpportunityDto;
 import com.tradeagent.opportunity.OpportunityApiModels.OpportunitySummaryDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 
@@ -13,98 +25,140 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class OpportunityAnalysisService {
 
-    private final MissedOpportunityDetector missedOpportunityDetector;
-    private final AvoidedLossDetector avoidedLossDetector;
-    private final TradePatternAnalyzer tradePatternAnalyzer;
+    private static final int WATCH_DAYS = 10;
+    private static final BigDecimal BIG_UP_RATE = BigDecimal.valueOf(10.0);
+    private static final BigDecimal BIG_DOWN_RATE = BigDecimal.valueOf(-10.0);
 
-    public OpportunityAnalysisService(MissedOpportunityDetector missedOpportunityDetector,
-                                      AvoidedLossDetector avoidedLossDetector,
-                                      TradePatternAnalyzer tradePatternAnalyzer) {
-        this.missedOpportunityDetector = missedOpportunityDetector;
-        this.avoidedLossDetector = avoidedLossDetector;
-        this.tradePatternAnalyzer = tradePatternAnalyzer;
+    private final WatchlistRepository watchlistRepository;
+    private final PriceBarRepository priceBarRepository;
+    private final TradeHistoryRepository tradeHistoryRepository;
+
+    public OpportunityAnalysisService(WatchlistRepository watchlistRepository,
+                                      PriceBarRepository priceBarRepository,
+                                      TradeHistoryRepository tradeHistoryRepository) {
+        this.watchlistRepository = watchlistRepository;
+        this.priceBarRepository = priceBarRepository;
+        this.tradeHistoryRepository = tradeHistoryRepository;
     }
 
     public List<OpportunityDto> getTopMissedOpportunities(Long userId) {
-        return missedOpportunityDetector.detect(userId).stream()
-                .sorted(Comparator.comparing(MissedOpportunity::getExpectedReturn).reversed())
+        return analyzeWatchlist(userId).stream()
+                .filter(item -> "MISSED_OPPORTUNITY".equals(item.type()))
+                .sorted(Comparator.comparing(OpportunityDto::changeRate).reversed())
                 .limit(10)
-                .map(item -> new OpportunityDto(
-                        "MISSED_OPPORTUNITY",
-                        item.getSymbol(),
-                        item.getSectorCode(),
-                        item.getExpectedReturn(),
-                        item.getReason(),
-                        buildMissedOpportunityFeedback(item),
-                        item.getDetectedAt()
-                ))
                 .toList();
     }
 
     public List<OpportunityDto> getTopAvoidedLosses(Long userId) {
-        return avoidedLossDetector.detect(userId).stream()
-                .sorted(Comparator.comparing(AvoidedLoss::getAvoidedLossRate).reversed())
+        return analyzeWatchlist(userId).stream()
+                .filter(item -> "AVOIDED_LOSS".equals(item.type()))
+                .sorted((left, right) -> right.changeRate().abs().compareTo(left.changeRate().abs()))
                 .limit(10)
-                .map(item -> new OpportunityDto(
-                        "AVOIDED_LOSS",
-                        item.getSymbol(),
-                        item.getSectorCode(),
-                        item.getAvoidedLossRate(),
-                        item.getReason(),
-                        buildAvoidedLossFeedback(item),
-                        item.getDetectedAt()
-                ))
                 .toList();
     }
 
     public List<BetterTimingDto> getTradePatterns(Long userId) {
-        return java.util.stream.Stream.concat(
-                        tradePatternAnalyzer.findSoldTooEarly(userId).stream(),
-                        tradePatternAnalyzer.findHeldTooLong(userId).stream())
-                .map(item -> new BetterTimingDto(
-                        item.patternType(),
-                        item.symbol(),
-                        item.sectorCode(),
-                        item.baseDate(),
-                        item.actualPrice(),
-                        item.referencePrice(),
-                        item.changeRate(),
-                        item.reason(),
-                        buildTradePatternFeedback(item)
-                ))
-                .sorted(Comparator.comparing(BetterTimingDto::baseDate).reversed())
-                .toList();
+        return List.of();
     }
 
     public OpportunitySummaryDto getOpportunitySummary(Long userId) {
-        int missedCount = missedOpportunityDetector.detect(userId).size();
-        int avoidedCount = avoidedLossDetector.detect(userId).size();
-        int soldTooEarlyCount = tradePatternAnalyzer.findSoldTooEarly(userId).size();
-        int heldTooLongCount = tradePatternAnalyzer.findHeldTooLong(userId).size();
+        List<OpportunityDto> cases = analyzeWatchlist(userId);
+        int missedCount = (int) cases.stream().filter(item -> "MISSED_OPPORTUNITY".equals(item.type())).count();
+        int avoidedCount = (int) cases.stream().filter(item -> "AVOIDED_LOSS".equals(item.type())).count();
 
         return new OpportunitySummaryDto(
                 missedCount,
                 avoidedCount,
-                soldTooEarlyCount,
-                heldTooLongCount
+                0,
+                0
         );
     }
 
-    private String buildMissedOpportunityFeedback(MissedOpportunity item) {
-        return item.getSymbol() + " was on the watchlist, was not bought, and then rallied within 10 trading days.";
+    private List<OpportunityDto> analyzeWatchlist(Long userId) {
+        LocalDateTime detectedAt = DateTimeUtil.nowUtc();
+        return watchlistRepository.findByUserId(userId).stream()
+                .flatMap(item -> analyzeOne(item, userId, detectedAt).stream())
+                .toList();
     }
 
-    private String buildAvoidedLossFeedback(AvoidedLoss item) {
-        return item.getSymbol() + " was on the watchlist, was not bought, and then declined enough to count as an avoided loss.";
+    private List<OpportunityDto> analyzeOne(WatchlistItem item, Long userId, LocalDateTime detectedAt) {
+        LocalDate startDate = item.getCreatedAt() != null ? item.getCreatedAt().toLocalDate() : LocalDate.now();
+        LocalDate endDate = startDate.plusDays(WATCH_DAYS);
+        List<PriceBar> bars = priceBarRepository.findBySymbolAndBarTimeBetween(
+                        item.getSymbol(),
+                        startDate.atStartOfDay(),
+                        endDate.atTime(java.time.LocalTime.MAX))
+                .stream()
+                .sorted(Comparator.comparing(PriceBar::getBarTime))
+                .toList();
+
+        if (bars.isEmpty()) {
+            return List.of();
+        }
+
+        boolean boughtInWindow = tradeHistoryRepository.findByUserIdAndSymbol(userId, item.getSymbol()).stream()
+                .anyMatch(trade -> trade.getTradeType() == TradeType.BUY && isWithinWatchWindow(trade, startDate, endDate));
+        if (boughtInWindow) {
+            return List.of();
+        }
+
+        BigDecimal basePrice = bars.get(0).getClosePrice();
+        if (basePrice == null || basePrice.compareTo(BigDecimal.ZERO) <= 0) {
+            return List.of();
+        }
+
+        BigDecimal maxRate = bars.stream()
+                .map(PriceBar::getHighPrice)
+                .filter(price -> price != null)
+                .map(price -> pctChange(basePrice, price))
+                .max(Comparator.naturalOrder())
+                .orElse(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+
+        BigDecimal minRate = bars.stream()
+                .map(PriceBar::getLowPrice)
+                .filter(price -> price != null)
+                .map(price -> pctChange(basePrice, price))
+                .min(Comparator.naturalOrder())
+                .orElse(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+
+        java.util.ArrayList<OpportunityDto> results = new java.util.ArrayList<>();
+        if (maxRate.compareTo(BIG_UP_RATE) >= 0) {
+            results.add(new OpportunityDto(
+                    "MISSED_OPPORTUNITY",
+                    item.getSymbol(),
+                    item.getSectorCode(),
+                    maxRate,
+                    "관심종목 등록 후 10일 내 +10% 이상 상승",
+                    item.getSymbol() + "이(가) 10일 내 크게 상승했지만 매수하지 않아 기회를 놓쳤습니다.",
+                    detectedAt
+            ));
+        }
+        if (minRate.compareTo(BIG_DOWN_RATE) <= 0) {
+            results.add(new OpportunityDto(
+                    "AVOIDED_LOSS",
+                    item.getSymbol(),
+                    item.getSectorCode(),
+                    minRate,
+                    "관심종목 등록 후 10일 내 -10% 이하 하락",
+                    item.getSymbol() + "이(가) 10일 내 크게 하락해 매수하지 않은 것이 손실 회피로 이어졌습니다.",
+                    detectedAt
+            ));
+        }
+        return results;
     }
 
-    private String buildTradePatternFeedback(BetterTimingDto item) {
-        return switch (item.patternType()) {
-            case "SOLD_TOO_EARLY" -> item.symbol() + " kept rising after the sell, so this looks like an early exit.";
-            case "HELD_TOO_LONG" -> item.symbol() + " experienced a meaningful drawdown before the exit, suggesting the hold lasted too long.";
-            case "BETTER_ENTRY" -> item.symbol() + " offered a better entry soon after the buy date.";
-            case "BETTER_EXIT" -> item.symbol() + " had more upside after the exit date.";
-            default -> item.symbol() + " shows a timing pattern worth reviewing.";
-        };
+    private boolean isWithinWatchWindow(TradeHistory trade, LocalDate startDate, LocalDate endDate) {
+        LocalDate tradedDate = trade.getTradedAt().toLocalDate();
+        return !tradedDate.isBefore(startDate) && !tradedDate.isAfter(endDate);
+    }
+
+    private BigDecimal pctChange(BigDecimal base, BigDecimal target) {
+        if (base == null || target == null || base.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        return target.subtract(base)
+                .divide(base, 6, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(100))
+                .setScale(2, RoundingMode.HALF_UP);
     }
 }

@@ -47,11 +47,15 @@ src/main/resources/application.properties.bak
 secrets/
 
 ### Runtime data / caches ###
+data/
 data/gdelt-raw/
 data/gdelt-cache/
 data/*.db
 data/*.mv.db
 data/*.trace.db
+*.mv.db
+*.trace.db
+*.log
 logs/
 
 ### Git history rewrite helpers ###

@@ -1,5 +1,6 @@
 package com.tradeagent.feedback;
 
+import com.tradeagent.common.DateTimeUtil;
 import com.tradeagent.common.ErrorCode;
 import com.tradeagent.common.ValidationException;
 import com.tradeagent.evaluation.EvaluationModels.DecisionSummaryDto;
@@ -11,40 +12,33 @@ import com.tradeagent.sector.SectorApiModels.PortfolioSectorDiagnosticDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Locale;
-
 @Service
 @Transactional(readOnly = true)
 public class FeedbackService {
 
-    private static final String TEMPLATE = "TEMPLATE";
+    private static final String PROVIDER = "VLLM_DIRECT";
     private static final String TRADE = "TRADE";
     private static final String OPPORTUNITY = "OPPORTUNITY";
     private static final String SECTOR = "SECTOR";
     private static final String OVERALL = "OVERALL";
+    private static final String FALLBACK_MESSAGE = "피드백 생성에 실패했습니다. 잠시 후 다시 시도해주세요.";
 
     private final TradeEvaluationService tradeEvaluationService;
     private final OpportunityAnalysisService opportunityAnalysisService;
     private final PortfolioSectorDiagnosticService portfolioSectorDiagnosticService;
     private final FeedbackPromptBuilder feedbackPromptBuilder;
-    private final TemplateFeedbackProvider templateFeedbackProvider;
-    private final VllmFeedbackProvider vllmFeedbackProvider;
-    private final FeedbackLogRepository feedbackLogRepository;
+    private final VllmClient vllmClient;
 
     public FeedbackService(TradeEvaluationService tradeEvaluationService,
                            OpportunityAnalysisService opportunityAnalysisService,
                            PortfolioSectorDiagnosticService portfolioSectorDiagnosticService,
                            FeedbackPromptBuilder feedbackPromptBuilder,
-                           TemplateFeedbackProvider templateFeedbackProvider,
-                           VllmFeedbackProvider vllmFeedbackProvider,
-                           FeedbackLogRepository feedbackLogRepository) {
+                           VllmClient vllmClient) {
         this.tradeEvaluationService = tradeEvaluationService;
         this.opportunityAnalysisService = opportunityAnalysisService;
         this.portfolioSectorDiagnosticService = portfolioSectorDiagnosticService;
         this.feedbackPromptBuilder = feedbackPromptBuilder;
-        this.templateFeedbackProvider = templateFeedbackProvider;
-        this.vllmFeedbackProvider = vllmFeedbackProvider;
-        this.feedbackLogRepository = feedbackLogRepository;
+        this.vllmClient = vllmClient;
     }
 
     @Transactional
@@ -52,7 +46,7 @@ public class FeedbackService {
         validateUserId(userId);
         DecisionSummaryDto decisionSummary = tradeEvaluationService.getDecisionSummary(userId);
         String prompt = feedbackPromptBuilder.buildTradeEvaluationPrompt(decisionSummary);
-        return generateAndLog(userId, TRADE, TEMPLATE, prompt);
+        return generate(userId, TRADE, prompt);
     }
 
     @Transactional
@@ -60,7 +54,7 @@ public class FeedbackService {
         validateUserId(userId);
         OpportunitySummaryDto opportunitySummary = opportunityAnalysisService.getOpportunitySummary(userId);
         String prompt = feedbackPromptBuilder.buildOpportunityPrompt(opportunitySummary);
-        return generateAndLog(userId, OPPORTUNITY, TEMPLATE, prompt);
+        return generate(userId, OPPORTUNITY, prompt);
     }
 
     @Transactional
@@ -68,7 +62,7 @@ public class FeedbackService {
         validateUserId(userId);
         PortfolioSectorDiagnosticDto diagnostic = portfolioSectorDiagnosticService.diagnose(userId);
         String prompt = feedbackPromptBuilder.buildSectorPrompt(diagnostic);
-        return generateAndLog(userId, SECTOR, TEMPLATE, prompt);
+        return generate(userId, SECTOR, prompt);
     }
 
     @Transactional
@@ -78,36 +72,30 @@ public class FeedbackService {
         OpportunitySummaryDto opportunitySummary = opportunityAnalysisService.getOpportunitySummary(userId);
         PortfolioSectorDiagnosticDto diagnostic = portfolioSectorDiagnosticService.diagnose(userId);
         String prompt = feedbackPromptBuilder.buildOverallPrompt(decisionSummary, opportunitySummary, diagnostic);
-        return generateAndLog(userId, OVERALL, TEMPLATE, prompt);
+        return generate(userId, OVERALL, prompt);
     }
 
-    private FeedbackResponseDto generateAndLog(Long userId, String feedbackType, String providerType, String prompt) {
-        FeedbackProvider provider = resolveProvider(providerType);
-        String message = provider.generate(prompt);
-
-        FeedbackLog savedLog = feedbackLogRepository.save(new FeedbackLog(
+    private FeedbackResponseDto generate(Long userId, String feedbackType, String prompt) {
+        String message = safeGenerate(prompt);
+        return new FeedbackResponseDto(
                 userId,
                 feedbackType,
-                providerType,
-                prompt,
-                message
-        ));
-
-        return new FeedbackResponseDto(
-                savedLog.getUserId(),
-                savedLog.getFeedbackType(),
-                savedLog.getProviderType(),
-                savedLog.getResponseText(),
-                savedLog.getCreatedAt()
+                PROVIDER,
+                message,
+                DateTimeUtil.nowUtc()
         );
     }
 
-    private FeedbackProvider resolveProvider(String providerType) {
-        String resolvedProviderType = providerType == null ? TEMPLATE : providerType.trim().toUpperCase(Locale.ROOT);
-        if ("VLLM".equals(resolvedProviderType)) {
-            return vllmFeedbackProvider;
+    private String safeGenerate(String prompt) {
+        try {
+            String response = vllmClient.generateFeedback(prompt);
+            if (response == null || response.isBlank()) {
+                return FALLBACK_MESSAGE;
+            }
+            return response;
+        } catch (Exception ex) {
+            return FALLBACK_MESSAGE;
         }
-        return templateFeedbackProvider;
     }
 
     private void validateUserId(Long userId) {

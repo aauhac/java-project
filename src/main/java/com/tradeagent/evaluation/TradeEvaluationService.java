@@ -6,11 +6,6 @@ import com.tradeagent.common.NotFoundException;
 import com.tradeagent.common.TradeType;
 import com.tradeagent.common.ValidationException;
 import com.tradeagent.evaluation.EvaluationModels.DecisionSummaryDto;
-import com.tradeagent.evaluation.EvaluationModels.DiversificationScoreInput;
-import com.tradeagent.evaluation.EvaluationModels.EntryScoreInput;
-import com.tradeagent.evaluation.EvaluationModels.ExitScoreInput;
-import com.tradeagent.evaluation.EvaluationModels.RiskScoreInput;
-import com.tradeagent.evaluation.EvaluationModels.SectorFitScoreInput;
 import com.tradeagent.evaluation.EvaluationModels.TradeEvaluationDto;
 import com.tradeagent.market.PriceBar;
 import com.tradeagent.market.PriceBarRepository;
@@ -28,6 +23,8 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 
 @Service
@@ -42,35 +39,17 @@ public class TradeEvaluationService {
     private final PortfolioRepository portfolioRepository;
     private final PriceBarRepository priceBarRepository;
     private final TradeEvaluationRepository tradeEvaluationRepository;
-    private final EntryScoreCalculator entryScoreCalculator;
-    private final ExitScoreCalculator exitScoreCalculator;
-    private final RiskScoreCalculator riskScoreCalculator;
-    private final DiversificationScoreCalculator diversificationScoreCalculator;
-    private final SectorFitScoreCalculator sectorFitScoreCalculator;
-    private final TotalDecisionScoreCalculator totalDecisionScoreCalculator;
     private final DecisionFeedbackBuilder decisionFeedbackBuilder;
 
     public TradeEvaluationService(TradeHistoryRepository tradeHistoryRepository,
                                   PortfolioRepository portfolioRepository,
                                   PriceBarRepository priceBarRepository,
                                   TradeEvaluationRepository tradeEvaluationRepository,
-                                  EntryScoreCalculator entryScoreCalculator,
-                                  ExitScoreCalculator exitScoreCalculator,
-                                  RiskScoreCalculator riskScoreCalculator,
-                                  DiversificationScoreCalculator diversificationScoreCalculator,
-                                  SectorFitScoreCalculator sectorFitScoreCalculator,
-                                  TotalDecisionScoreCalculator totalDecisionScoreCalculator,
                                   DecisionFeedbackBuilder decisionFeedbackBuilder) {
         this.tradeHistoryRepository = tradeHistoryRepository;
         this.portfolioRepository = portfolioRepository;
         this.priceBarRepository = priceBarRepository;
         this.tradeEvaluationRepository = tradeEvaluationRepository;
-        this.entryScoreCalculator = entryScoreCalculator;
-        this.exitScoreCalculator = exitScoreCalculator;
-        this.riskScoreCalculator = riskScoreCalculator;
-        this.diversificationScoreCalculator = diversificationScoreCalculator;
-        this.sectorFitScoreCalculator = sectorFitScoreCalculator;
-        this.totalDecisionScoreCalculator = totalDecisionScoreCalculator;
         this.decisionFeedbackBuilder = decisionFeedbackBuilder;
     }
 
@@ -150,43 +129,16 @@ public class TradeEvaluationService {
     private EvaluationScores calculateScores(TradeHistory tradeHistory) {
         TradePairContext tradePairContext = resolveTradePair(tradeHistory);
         List<PortfolioPosition> positions = portfolioRepository.findByUserId(tradeHistory.getUserId());
+        List<PriceBar> barsAfterEntry = loadBarsAfterEntry(tradePairContext.buyTrade());
+        List<PriceBar> barsAroundExit = loadBarsAroundExit(tradePairContext.sellTrade());
+        List<PriceBar> holdingBars = loadHoldingBars(tradePairContext.buyTrade(), tradePairContext.sellTrade());
 
-        double entryScore = tradePairContext.buyTrade() != null
-                ? entryScoreCalculator.calculate(new EntryScoreInput(
-                tradePairContext.buyTrade(),
-                loadBarsAfterEntry(tradePairContext.buyTrade())
-        ))
-                : neutralScore();
-        double exitScore = tradePairContext.sellTrade() != null
-                ? exitScoreCalculator.calculate(new ExitScoreInput(
-                tradePairContext.sellTrade(),
-                loadBarsAroundExit(tradePairContext.sellTrade())
-        ))
-                : neutralScore();
-        double riskScore = tradePairContext.buyTrade() != null
-                ? riskScoreCalculator.calculate(new RiskScoreInput(
-                tradePairContext.buyTrade(),
-                tradePairContext.sellTrade(),
-                loadHoldingBars(tradePairContext.buyTrade(), tradePairContext.sellTrade())
-        ))
-                : neutralScore();
-        double diversificationScore = diversificationScoreCalculator.calculate(new DiversificationScoreInput(
-                tradeHistory.getUserId(),
-                positions
-        ));
-        double sectorFitScore = sectorFitScoreCalculator.calculate(new SectorFitScoreInput(
-                tradeHistory.getSymbol(),
-                tradeHistory.getSectorCode(),
-                tradeHistory.getTradedAt().toLocalDate(),
-                null
-        ));
-        double totalScore = totalDecisionScoreCalculator.calculate(
-                entryScore,
-                exitScore,
-                riskScore,
-                diversificationScore,
-                sectorFitScore
-        );
+        double entryScore = calculateEntryScore(tradePairContext.buyTrade(), barsAfterEntry);
+        double exitScore = calculateExitScore(tradePairContext.sellTrade(), barsAroundExit);
+        double riskScore = calculateRiskScore(tradePairContext.buyTrade(), holdingBars);
+        double diversificationScore = calculateDiversificationScore(positions);
+        double sectorFitScore = calculateSectorFitScore(tradeHistory.getSectorCode());
+        double totalScore = calculateTotalScore(entryScore, exitScore, riskScore, diversificationScore, sectorFitScore);
 
         return new EvaluationScores(entryScore, exitScore, riskScore, diversificationScore, sectorFitScore, totalScore);
     }
@@ -360,6 +312,153 @@ public class TradeEvaluationService {
 
     private BigDecimal toScore(double value) {
         return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private double calculateEntryScore(TradeHistory buyTrade, List<PriceBar> barsAfterEntry) {
+        if (buyTrade == null || barsAfterEntry.isEmpty() || buyTrade.getPrice() == null) {
+            return neutralScore();
+        }
+        BigDecimal entryPrice = buyTrade.getPrice();
+        BigDecimal bestPrice = barsAfterEntry.stream()
+                .map(PriceBar::getHighPrice)
+                .filter(price -> price != null)
+                .max(Comparator.naturalOrder())
+                .orElse(entryPrice);
+        double bestGainPct = percentChange(entryPrice, bestPrice);
+        return clampScore(50.0 + bestGainPct * 3.0);
+    }
+
+    private double calculateExitScore(TradeHistory sellTrade, List<PriceBar> barsAroundExit) {
+        if (sellTrade == null || barsAroundExit.isEmpty() || sellTrade.getPrice() == null) {
+            return neutralScore();
+        }
+        BigDecimal sellPrice = sellTrade.getPrice();
+        List<PriceBar> afterBars = barsAroundExit.stream()
+                .filter(bar -> bar.getBarTime() != null && bar.getBarTime().isAfter(sellTrade.getTradedAt()))
+                .toList();
+        if (afterBars.isEmpty()) {
+            return neutralScore();
+        }
+        BigDecimal maxAfter = afterBars.stream()
+                .map(PriceBar::getHighPrice)
+                .filter(price -> price != null)
+                .max(Comparator.naturalOrder())
+                .orElse(sellPrice);
+        BigDecimal minAfter = afterBars.stream()
+                .map(PriceBar::getLowPrice)
+                .filter(price -> price != null)
+                .min(Comparator.naturalOrder())
+                .orElse(sellPrice);
+        double missedUpsidePct = percentChange(sellPrice, maxAfter);
+        double avoidedDropPct = -percentChange(sellPrice, minAfter);
+        return clampScore(50.0 - missedUpsidePct * 2.0 + avoidedDropPct * 1.5);
+    }
+
+    private double calculateRiskScore(TradeHistory buyTrade, List<PriceBar> holdingBars) {
+        if (buyTrade == null || holdingBars.isEmpty()) {
+            return neutralScore();
+        }
+        BigDecimal peak = null;
+        double maxDrawdownPct = 0.0;
+        for (PriceBar bar : holdingBars) {
+            BigDecimal high = bar.getHighPrice();
+            BigDecimal low = bar.getLowPrice();
+            if (high == null || low == null) {
+                continue;
+            }
+            if (peak == null || high.compareTo(peak) > 0) {
+                peak = high;
+            }
+            if (peak != null && peak.compareTo(BigDecimal.ZERO) > 0) {
+                double drawdownPct = (peak.subtract(low))
+                        .divide(peak, 6, RoundingMode.HALF_UP)
+                        .multiply(BigDecimal.valueOf(100))
+                        .doubleValue();
+                if (drawdownPct > maxDrawdownPct) {
+                    maxDrawdownPct = drawdownPct;
+                }
+            }
+        }
+        return clampScore(100.0 - maxDrawdownPct * 2.0);
+    }
+
+    private double calculateDiversificationScore(List<PortfolioPosition> positions) {
+        if (positions == null || positions.isEmpty()) {
+            return neutralScore();
+        }
+        BigDecimal total = positions.stream()
+                .map(PortfolioPosition::getTotalBuyAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (total.compareTo(BigDecimal.ZERO) <= 0) {
+            return neutralScore();
+        }
+
+        Set<String> uniqueSectors = positions.stream()
+                .map(PortfolioPosition::getSectorCode)
+                .filter(code -> code != null && !code.isBlank())
+                .collect(java.util.stream.Collectors.toSet());
+
+        Map<String, BigDecimal> sectorWeights = positions.stream()
+                .filter(position -> position.getSectorCode() != null)
+                .collect(java.util.stream.Collectors.groupingBy(
+                        PortfolioPosition::getSectorCode,
+                        java.util.stream.Collectors.reducing(BigDecimal.ZERO, PortfolioPosition::getTotalBuyAmount, BigDecimal::add)
+                ));
+
+        double maxWeightPct = sectorWeights.values().stream()
+                .map(weight -> weight.divide(total, 6, RoundingMode.HALF_UP)
+                        .multiply(BigDecimal.valueOf(100))
+                        .doubleValue())
+                .max(Double::compareTo)
+                .orElse(100.0);
+
+        double sectorBonus = Math.min(uniqueSectors.size() * 12.0, 40.0);
+        double concentrationPenalty = Math.max(0.0, (maxWeightPct - 40.0) * 0.8);
+        return clampScore(50.0 + sectorBonus - concentrationPenalty);
+    }
+
+    private double calculateSectorFitScore(String sectorCode) {
+        if (sectorCode == null) {
+            return neutralScore();
+        }
+        return com.tradeagent.sector.SectorConstants.SUPPORTED_SECTORS.contains(sectorCode.toUpperCase()) ? 60.0 : 50.0;
+    }
+
+    private double calculateTotalScore(double entryScore,
+                                       double exitScore,
+                                       double riskScore,
+                                       double diversificationScore,
+                                       double sectorFitScore) {
+        return clampScore(
+                entryScore * 0.30
+                        + exitScore * 0.30
+                        + riskScore * 0.25
+                        + diversificationScore * 0.10
+                        + sectorFitScore * 0.05
+        );
+    }
+
+    private double percentChange(BigDecimal from, BigDecimal to) {
+        if (from == null || to == null || from.compareTo(BigDecimal.ZERO) <= 0) {
+            return 0.0;
+        }
+        return to.subtract(from)
+                .divide(from, 6, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(100))
+                .doubleValue();
+    }
+
+    private double clampScore(double score) {
+        if (!Double.isFinite(score)) {
+            return neutralScore();
+        }
+        if (score < 0.0) {
+            return 0.0;
+        }
+        if (score > 100.0) {
+            return 100.0;
+        }
+        return Math.round(score * 100.0) / 100.0;
     }
 
     private record TradePairContext(TradeHistory buyTrade, TradeHistory sellTrade) {

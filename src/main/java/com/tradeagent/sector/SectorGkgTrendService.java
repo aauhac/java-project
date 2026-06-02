@@ -2,7 +2,6 @@ package com.tradeagent.sector;
 
 import com.tradeagent.common.DateTimeUtil;
 import com.tradeagent.common.ErrorCode;
-import com.tradeagent.common.NotFoundException;
 import com.tradeagent.common.ValidationException;
 import com.tradeagent.sector.SectorApiModels.RefreshNewsResultDto;
 import com.tradeagent.sector.SectorApiModels.SectorTrendDto;
@@ -22,10 +21,7 @@ import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)
@@ -33,23 +29,19 @@ public class SectorGkgTrendService {
 
     private static final BigDecimal ZERO_2 = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
     private static final BigDecimal ZERO_4 = BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
-    private static final List<String> SUPPORTED_SECTORS = List.of("SEMI", "AIINF", "EV", "BIO", "CLOUD", "ENERGY");
     private static final int MAX_ROWS_PER_FILE = 2000;
 
-    private final SectorMasterRepository sectorMasterRepository;
     private final SectorScoreRepository sectorScoreRepository;
     private final GdeltRawNewsProvider rawNewsProvider;
     private final SectorRecordClassifier sectorRecordClassifier;
     private final SectorGkgAggregator sectorGkgAggregator;
     private final SectorNewsSentimentService sectorNewsSentimentService;
 
-    public SectorGkgTrendService(SectorMasterRepository sectorMasterRepository,
-                                 SectorScoreRepository sectorScoreRepository,
+    public SectorGkgTrendService(SectorScoreRepository sectorScoreRepository,
                                  GdeltRawNewsProvider rawNewsProvider,
                                  SectorRecordClassifier sectorRecordClassifier,
                                  SectorGkgAggregator sectorGkgAggregator,
                                  SectorNewsSentimentService sectorNewsSentimentService) {
-        this.sectorMasterRepository = sectorMasterRepository;
         this.sectorScoreRepository = sectorScoreRepository;
         this.rawNewsProvider = rawNewsProvider;
         this.sectorRecordClassifier = sectorRecordClassifier;
@@ -59,11 +51,10 @@ public class SectorGkgTrendService {
 
     @Transactional
     public RefreshNewsResultDto refreshNews() {
-        ensureMastersExist();
         GdeltRawSample sample = rawNewsProvider.fetchMonthlySample();
         Map<String, List<com.tradeagent.sector.gdelt.dto.GdeltGkgRecord>> classified = sectorRecordClassifier.classify(sample.records());
         Map<String, List<com.tradeagent.sector.gdelt.dto.GdeltGkgRecord>> normalized = new LinkedHashMap<>();
-        for (String sectorCode : SUPPORTED_SECTORS) {
+        for (String sectorCode : SectorConstants.SUPPORTED_SECTORS) {
             normalized.put(sectorCode, classified.getOrDefault(sectorCode, List.of()));
         }
         List<SectorRecordGroup> groups = sectorGkgAggregator.aggregate(normalized);
@@ -84,21 +75,16 @@ public class SectorGkgTrendService {
     }
 
     public List<SectorTrendDto> getTrendScores(LocalDate from, LocalDate to) {
-        ensureMastersExist();
         LocalDate resolvedTo = to != null ? to : (from != null ? from : DateTimeUtil.today());
         LocalDate resolvedFrom = from != null ? from : resolvedTo;
         if (resolvedFrom.isAfter(resolvedTo)) {
             throw new ValidationException(ErrorCode.INVALID_INPUT, "from must be on or before to");
         }
 
-        Map<String, SectorMaster> masterMap = sectorMasterRepository.findAllByOrderBySectorCodeAsc().stream()
-                .filter(master -> SUPPORTED_SECTORS.contains(master.getSectorCode()))
-                .collect(Collectors.toMap(SectorMaster::getSectorCode, Function.identity()));
-
-        return SUPPORTED_SECTORS.stream()
+        return SectorConstants.SUPPORTED_SECTORS.stream()
                 .flatMap(code -> sectorScoreRepository.findBySectorCodeAndScoreDateBetweenOrderByScoreDateAsc(code, resolvedFrom, resolvedTo).stream())
                 .sorted(Comparator.comparing(SectorScore::getScoreDate).thenComparing(SectorScore::getTotalSectorScore).reversed())
-                .map(score -> toDto(masterMap.get(score.getSectorCode()), score))
+                .map(this::toDto)
                 .toList();
     }
 
@@ -110,14 +96,22 @@ public class SectorGkgTrendService {
     }
 
     private SectorTrendDto upsertScore(SectorRecordGroup group, SectorSentimentResult sentiment, GdeltRawSample sample) {
-        SectorMaster master = sectorMasterRepository.findBySectorCode(group.sectorCode())
-                .orElseThrow(() -> new NotFoundException(ErrorCode.SECTOR_NOT_FOUND, "sector not found for code " + group.sectorCode()));
+        SectorSentimentResult safeSentiment = sentiment != null
+                ? sentiment
+                : new SectorSentimentResult(
+                        group.sectorCode(),
+                        "NEUTRAL",
+                        BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP),
+                        "sentiment unavailable",
+                        List.of(),
+                        List.of()
+                );
         BigDecimal newsVolumeScore = calculateNewsVolumeScore(group.articleCount(), sample);
         BigDecimal baseScore = newsVolumeScore.multiply(BigDecimal.valueOf(0.45))
                 .add(group.toneScore().multiply(BigDecimal.valueOf(0.35)))
                 .add(group.keywordStrengthScore().multiply(BigDecimal.valueOf(0.20)))
                 .setScale(2, RoundingMode.HALF_UP);
-        BigDecimal totalSectorScore = clamp(baseScore.add(sentiment.sentimentAdjustment()));
+        BigDecimal totalSectorScore = clamp(baseScore.add(safeSentiment.sentimentAdjustment()));
         String status = statusFor(totalSectorScore);
         LocalDate scoreDate = sample.startDate().plusDays(sample.days() - 1L);
         LocalDateTime analyzedAt = DateTimeUtil.nowUtc();
@@ -155,10 +149,10 @@ public class SectorGkgTrendService {
                 sample.rawRecordCount(),
                 String.join(", ", group.topThemes()),
                 String.join(", ", group.topOrganizations()),
-                sentiment.reason()
+                safeSentiment.reason()
         );
         SectorScore saved = sectorScoreRepository.save(score);
-        return toDto(master, saved);
+        return toDto(saved);
     }
 
     private BigDecimal calculateNewsVolumeScore(int articleCount, GdeltRawSample sample) {
@@ -169,10 +163,10 @@ public class SectorGkgTrendService {
                 .min(BigDecimal.valueOf(100));
     }
 
-    private SectorTrendDto toDto(SectorMaster master, SectorScore score) {
+    private SectorTrendDto toDto(SectorScore score) {
         return new SectorTrendDto(
                 score.getSectorCode(),
-                master != null ? master.getSectorName() : score.getSectorCode(),
+                SectorConstants.nameOf(score.getSectorCode()),
                 score.getScoreDate(),
                 score.getArticleCount(),
                 score.getAvgToneScore().setScale(4, RoundingMode.HALF_UP),
@@ -203,16 +197,5 @@ public class SectorGkgTrendService {
             return "WEAK";
         }
         return "NEUTRAL";
-    }
-
-    private void ensureMastersExist() {
-        List<String> existingCodes = sectorMasterRepository.findAllByOrderBySectorCodeAsc().stream()
-                .map(SectorMaster::getSectorCode)
-                .toList();
-        for (String required : SUPPORTED_SECTORS) {
-            if (!existingCodes.contains(required)) {
-                throw new ValidationException(ErrorCode.SECTOR_NOT_FOUND, "Missing sector master for code " + required);
-            }
-        }
     }
 }

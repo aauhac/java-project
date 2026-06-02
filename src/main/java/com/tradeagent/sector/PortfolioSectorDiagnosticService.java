@@ -5,7 +5,6 @@ import com.tradeagent.portfolio.PortfolioRepository;
 import com.tradeagent.sector.SectorApiModels.PortfolioSectorDiagnosticDto;
 import com.tradeagent.sector.SectorApiModels.PortfolioTrendMatchDto;
 import com.tradeagent.sector.SectorApiModels.SectorExposureDto;
-import com.tradeagent.sector.SectorApiModels.SectorScoreDto;
 import com.tradeagent.sector.SectorApiModels.SectorTrendDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,37 +26,23 @@ public class PortfolioSectorDiagnosticService {
     private static final String NO_TREND_DATA_MESSAGE = "저장된 동향 분석 데이터가 없습니다. 동향 분석 버튼을 눌러주세요.";
 
     private final PortfolioRepository portfolioRepository;
-    private final SectorMasterRepository sectorMasterRepository;
-    private final SectorAnalysisService sectorAnalysisService;
     private final SectorGkgTrendService sectorGkgTrendService;
-    private final SectorFeedbackService sectorFeedbackService;
 
     public PortfolioSectorDiagnosticService(PortfolioRepository portfolioRepository,
-                                            SectorMasterRepository sectorMasterRepository,
-                                            SectorAnalysisService sectorAnalysisService,
-                                            SectorGkgTrendService sectorGkgTrendService,
-                                            SectorFeedbackService sectorFeedbackService) {
+                                            SectorGkgTrendService sectorGkgTrendService) {
         this.portfolioRepository = portfolioRepository;
-        this.sectorMasterRepository = sectorMasterRepository;
-        this.sectorAnalysisService = sectorAnalysisService;
         this.sectorGkgTrendService = sectorGkgTrendService;
-        this.sectorFeedbackService = sectorFeedbackService;
     }
 
     public PortfolioSectorDiagnosticDto diagnose(Long userId) {
-        List<SectorExposureDto> exposures = getMixedExposureBreakdown(userId, sectorAnalysisService.getLatestSectorScores());
+        List<SectorTrendDto> scores = sectorGkgTrendService.getTrendScoresForDate(LocalDate.now());
+        List<SectorExposureDto> exposures = getTrendExposureBreakdown(userId, scores);
         BigDecimal strongExposure = sumExposureByStatus(exposures, "STRONG");
         BigDecimal weakExposure = sumExposureByStatus(exposures, "WEAK");
-        PortfolioSectorDiagnosticDto draft = new PortfolioSectorDiagnosticDto(
-                strongExposure,
-                weakExposure,
-                "",
-                exposures
-        );
         return new PortfolioSectorDiagnosticDto(
                 strongExposure,
                 weakExposure,
-                sectorFeedbackService.buildSectorFeedback(draft),
+                buildDiagnosticMessage(strongExposure, weakExposure, exposures),
                 exposures
         );
     }
@@ -98,13 +83,7 @@ public class PortfolioSectorDiagnosticService {
     }
 
     public List<SectorExposureDto> getSectorExposureBreakdown(Long userId) {
-        return getMixedExposureBreakdown(userId, sectorAnalysisService.getLatestSectorScores());
-    }
-
-    private List<SectorExposureDto> getMixedExposureBreakdown(Long userId, List<SectorScoreDto> scores) {
-        Map<String, SectorScoreDto> sectorScoreMap = scores.stream()
-                .collect(Collectors.toMap(SectorScoreDto::sectorCode, Function.identity()));
-        return buildExposureBreakdown(userId, sectorScoreMap, SectorScoreDto::totalSectorScore, SectorScoreDto::status);
+        return getTrendExposureBreakdown(userId, sectorGkgTrendService.getTrendScoresForDate(LocalDate.now()));
     }
 
     private List<SectorExposureDto> getTrendExposureBreakdown(Long userId, List<SectorTrendDto> scores) {
@@ -121,9 +100,6 @@ public class PortfolioSectorDiagnosticService {
         if (positions.isEmpty()) {
             return List.of();
         }
-
-        Map<String, String> sectorNameMap = sectorMasterRepository.findAllByOrderBySectorCodeAsc().stream()
-                .collect(Collectors.toMap(SectorMaster::getSectorCode, SectorMaster::getSectorName));
 
         BigDecimal totalExposure = positions.stream()
                 .map(PortfolioPosition::getTotalBuyAmount)
@@ -145,14 +121,15 @@ public class PortfolioSectorDiagnosticService {
                             .divide(totalExposure, 6, RoundingMode.HALF_UP)
                             .multiply(BigDecimal.valueOf(100))
                             .setScale(2, RoundingMode.HALF_UP);
-                    T sectorScore = sectorScoreMap.get(entry.getKey());
+                    String sectorCode = entry.getKey();
+                    T sectorScore = sectorScoreMap.get(sectorCode);
                     BigDecimal totalSectorScore = sectorScore != null
                             ? scoreExtractor.apply(sectorScore).setScale(2, RoundingMode.HALF_UP)
                             : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
                     String status = sectorScore != null ? statusExtractor.apply(sectorScore) : "NEUTRAL";
                     return new SectorExposureDto(
-                            entry.getKey(),
-                            sectorNameMap.getOrDefault(entry.getKey(), entry.getKey()),
+                            sectorCode,
+                            SectorConstants.nameOf(sectorCode),
                             portfolioRate,
                             totalSectorScore,
                             status
@@ -178,5 +155,18 @@ public class PortfolioSectorDiagnosticService {
             return "약한 섹터 노출이 더 높아 최근 뉴스 동향과의 일치도가 낮습니다.";
         }
         return "중립적인 흐름입니다. 강한 섹터 노출을 조금 더 늘릴 여지가 있습니다.";
+    }
+
+    private String buildDiagnosticMessage(BigDecimal strongExposure, BigDecimal weakExposure, List<SectorExposureDto> exposures) {
+        if (exposures.isEmpty()) {
+            return "포트폴리오 보유 종목이 없어 섹터 비중을 계산할 수 없습니다.";
+        }
+        if (strongExposure.compareTo(weakExposure) > 0) {
+            return "현재 포트폴리오는 상위 섹터에 상대적으로 더 많이 배분되어 있습니다.";
+        }
+        if (strongExposure.compareTo(weakExposure) < 0) {
+            return "현재 포트폴리오는 하위 섹터 비중이 더 높아 재점검이 필요합니다.";
+        }
+        return "현재 포트폴리오는 상위/하위 섹터 비중이 유사합니다.";
     }
 }
