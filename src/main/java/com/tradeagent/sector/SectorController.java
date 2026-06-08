@@ -92,8 +92,8 @@ public class SectorController {
     }
 
     @PostMapping("/calculate")
-    public ApiResponse<List<SectorScoreDto>> calculate() {
-        RefreshNewsResultDto refreshed = sectorGkgTrendService.refreshNews();
+    public ApiResponse<List<SectorScoreDto>> calculate(@RequestParam(required = false) LocalDate baseDate) {
+        RefreshNewsResultDto refreshed = sectorGkgTrendService.refreshNews(baseDate);
 
         return ApiResponse.ok(
                 refreshed.trends().stream()
@@ -103,8 +103,8 @@ public class SectorController {
     }
 
     @PostMapping("/refresh-news")
-    public ApiResponse<RefreshNewsResultDto> refreshNews() {
-        return ApiResponse.ok(sectorGkgTrendService.refreshNews());
+    public ApiResponse<RefreshNewsResultDto> refreshNews(@RequestParam(required = false) LocalDate baseDate) {
+        return ApiResponse.ok(sectorGkgTrendService.refreshNews(baseDate));
     }
 
     @GetMapping("/refresh-progress")

@@ -57,11 +57,11 @@ public class SectorGkgTrendService {
     }
 
     @Transactional
-    public RefreshNewsResultDto refreshNews() {
+    public RefreshNewsResultDto refreshNews(LocalDate baseDate) {
         progress.start(TOTAL_PROGRESS_STEPS, "뉴스 갱신을 시작합니다.");
 
         try {
-            GdeltRawSample sample = rawNewsProvider.fetchMonthlySample();
+            GdeltRawSample sample = rawNewsProvider.fetchMonthlySample(baseDate);
 
             progress.log(
                     "DOWNLOAD",

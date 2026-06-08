@@ -40,8 +40,8 @@ public class GdeltRawNewsProvider {
         this.progress = progress;
     }
 
-    public GdeltRawSample fetchMonthlySample() {
-        LocalDate latestDate = LocalDate.now().minusDays(1);
+    public GdeltRawSample fetchMonthlySample(LocalDate baseDate) {
+        LocalDate latestDate = baseDate != null ? baseDate : LocalDate.now().minusDays(1);
         LocalDate startDate = latestDate.minusDays(DAYS - 1);
 
         List<Path> csvFiles = new ArrayList<>();

@@ -130,8 +130,8 @@
             return request(`/api/sectors/trends${buildQuery({from: date, to: date})}`);
         },
 
-        refreshSectorNews() {
-            return request('/api/sectors/refresh-news', {
+        refreshSectorNews(baseDate) {
+            return request(`/api/sectors/refresh-news${buildQuery({baseDate})}`, {
                 method: 'POST'
             });
         },
