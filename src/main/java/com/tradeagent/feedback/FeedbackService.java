@@ -88,7 +88,7 @@ public class FeedbackService {
 
     private String safeGenerate(String prompt) {
         try {
-            String response = vllmClient.generateFeedback(prompt);
+            String response = vllmClient.generateText(prompt);
             if (response == null || response.isBlank()) {
                 return FALLBACK_MESSAGE;
             }

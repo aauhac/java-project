@@ -5,43 +5,40 @@ import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 @Component
 public class GdeltGkgCsvParser {
 
-    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+    private static final DateTimeFormatter DATE_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
-    public List<GdeltGkgRecord> parse(Path zipFile, int maxRows) {
+    public List<GdeltGkgRecord> parseCsv(Path csvFile, int maxRows) {
         List<GdeltGkgRecord> records = new ArrayList<>();
-        try (ZipInputStream zis = new ZipInputStream(java.nio.file.Files.newInputStream(zipFile), StandardCharsets.UTF_8)) {
-            ZipEntry entry = zis.getNextEntry();
-            if (entry == null) {
-                return List.of();
-            }
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(zis, StandardCharsets.UTF_8))) {
-                String line;
-                int count = 0;
-                while ((line = reader.readLine()) != null && count < maxRows) {
-                    GdeltGkgRecord record = parseLine(line);
-                    if (record != null) {
-                        records.add(record);
-                        count++;
-                    }
+
+        try (BufferedReader reader = Files.newBufferedReader(csvFile, StandardCharsets.UTF_8)) {
+            String line;
+            int count = 0;
+
+            while ((line = reader.readLine()) != null && count < maxRows) {
+                GdeltGkgRecord record = parseLine(line);
+                if (record != null) {
+                    records.add(record);
+                    count++;
                 }
             }
         } catch (IOException ex) {
+            System.out.println("[GDELT] CSV 파싱 실패: " + csvFile + " / " + ex.getMessage());
             return List.of();
         }
+
         return records;
     }
 
@@ -50,6 +47,7 @@ public class GdeltGkgCsvParser {
         if (parts.length < 24) {
             return null;
         }
+
         return new GdeltGkgRecord(
                 value(parts, 0),
                 parseDate(value(parts, 1)),
@@ -81,6 +79,7 @@ public class GdeltGkgCsvParser {
         if (rawTone == null || rawTone.isBlank()) {
             return BigDecimal.ZERO;
         }
+
         try {
             String first = rawTone.split(",")[0].trim();
             return new BigDecimal(first);

@@ -83,12 +83,6 @@ public final class SectorApiModels {
     ) {
     }
 
-    public record TrendAnalysisResultDto(
-            List<SectorTrendDto> trends,
-            PortfolioTrendMatchDto trendMatch
-    ) {
-    }
-
     public record RefreshNewsResultDto(
             LocalDate startDate,
             int days,
@@ -96,16 +90,6 @@ public final class SectorApiModels {
             int sampleFileCount,
             int rawRecordCount,
             List<SectorTrendDto> trends
-    ) {
-    }
-
-    public record GdeltDebugResultDto(
-            String query,
-            LocalDate from,
-            LocalDate to,
-            int maxRecords,
-            int articleCount,
-            List<NewsEventDto> articles
     ) {
     }
 }

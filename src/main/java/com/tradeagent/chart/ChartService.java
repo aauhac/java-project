@@ -43,6 +43,10 @@ public class ChartService {
         String resolvedTimeframe = normalizeTimeframe(timeframe);
         String apiKey = normalizeCredential(properties.getApiKey());
         String apiSecret = normalizeCredential(properties.getApiSecret());
+        log.info("DEBUG ENV ALPACA_API_KEY={}", summarizeCredential(System.getenv("ALPACA_API_KEY")));
+        log.info("DEBUG ENV ALPACA_API_SECRET={}", summarizeCredential(System.getenv("ALPACA_API_SECRET")));
+        log.info("DEBUG PROP alpaca.apiKey={}", summarizeCredential(apiKey));
+        log.info("DEBUG PROP alpaca.apiSecret={}", summarizeCredential(apiSecret));
         LocalDate resolvedEnd = end != null ? end : LocalDate.now(ZoneOffset.UTC);
         int defaultSpan = Math.max(DEFAULT_LIMIT - 1, 30);
         LocalDate resolvedStart = start != null ? start : resolvedEnd.minusDays(defaultSpan);

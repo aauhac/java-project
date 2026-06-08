@@ -24,10 +24,6 @@ public class VllmClient {
         this.webClient = webClientBuilder.baseUrl(normalizeBaseUrl(vllmProperties.getBaseUrl())).build();
     }
 
-    public String generateFeedback(String prompt) {
-        return generateText(prompt);
-    }
-
     public String generateText(String prompt) {
         if (!StringUtils.hasText(prompt)) {
             return FALLBACK_MESSAGE;

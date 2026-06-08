@@ -13,35 +13,38 @@ import java.util.stream.Stream;
 @Component
 public class GdeltRawFileCache {
 
-    private static final String CACHE_DIR = "./data/gdelt-raw";
+    private static final String ZIP_DIR = "./data/gdelt-raw/zip";
+    private static final String CSV_DIR = "./data/gdelt-raw/csv";
 
     public void enforceMaxFiles(int maxFiles) {
-        List<Path> files = listCachedGkgFiles();
-        if (files.size() <= maxFiles) {
-            return;
-        }
-        int deleteCount = files.size() - maxFiles;
-        for (int i = 0; i < deleteCount; i++) {
-            try {
-                Files.deleteIfExists(files.get(i));
-            } catch (IOException ignored) {
-            }
-        }
+        enforce(ZIP_DIR, ".gkg.csv.zip", maxFiles);
+        enforce(CSV_DIR, ".gkg.csv", maxFiles);
     }
 
-    public List<Path> listCachedGkgFiles() {
-        Path dir = Paths.get(CACHE_DIR);
+    private void enforce(String dirPath, String suffix, int maxFiles) {
+        Path dir = Paths.get(dirPath);
         if (!Files.exists(dir)) {
-            return List.of();
+            return;
         }
+
         try (Stream<Path> stream = Files.list(dir)) {
-            return stream
+            List<Path> files = stream
                     .filter(Files::isRegularFile)
-                    .filter(path -> path.getFileName().toString().endsWith(".gkg.csv.zip"))
+                    .filter(path -> path.getFileName().toString().endsWith(suffix))
                     .sorted(Comparator.comparing(path -> path.getFileName().toString()))
                     .toList();
+
+            if (files.size() <= maxFiles) {
+                return;
+            }
+
+            int deleteCount = files.size() - maxFiles;
+            for (int i = 0; i < deleteCount; i++) {
+                Files.deleteIfExists(files.get(i));
+            }
         } catch (IOException ex) {
-            return List.of();
+            org.slf4j.LoggerFactory.getLogger(GdeltRawFileCache.class)
+                    .warn("Failed to clean GDELT cache: {}", ex.getMessage());
         }
     }
 }

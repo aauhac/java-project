@@ -15,48 +15,60 @@ import java.util.List;
 @Component
 public class GdeltRawNewsProvider {
 
-    private static final int DAYS = 31;
-    private static final LocalTime SAMPLE_TIME = LocalTime.of(18, 0);
+    private static final int YEAR = 2026;
+    private static final int DAYS = 30;
     private static final int MAX_ROWS_PER_FILE = 2000;
     private static final int MAX_CACHED_FILES = 30;
+    private static final LocalTime SAMPLE_TIME = LocalTime.of(18, 0);
 
+    private final GdeltRawFileDownloader fileDownloader;
     private final GdeltRawFileCache fileCache;
     private final GdeltGkgCsvParser csvParser;
 
-    public GdeltRawNewsProvider(GdeltRawFileCache fileCache,
+    public GdeltRawNewsProvider(GdeltRawFileDownloader fileDownloader,
+                                GdeltRawFileCache fileCache,
                                 GdeltGkgCsvParser csvParser) {
+        this.fileDownloader = fileDownloader;
         this.fileCache = fileCache;
         this.csvParser = csvParser;
     }
 
     public GdeltRawSample fetchMonthlySample() {
-        LocalDate startDate = LocalDate.now().minusDays(DAYS);
+        LocalDate latestDate = LocalDate.now().minusDays(1);
+        LocalDate startDate = latestDate.minusDays(DAYS - 1);
 
-        List<Path> selected = fileCache.listCachedGkgFiles().stream()
-                .sorted(Comparator.comparing((Path p) -> p.getFileName().toString()).reversed())
-                .limit(MAX_CACHED_FILES)
-                .toList();
-        List<Path> files = new ArrayList<>();
+        List<Path> csvFiles = new ArrayList<>();
         List<GdeltGkgRecord> records = new ArrayList<>();
-        for (Path file : selected) {
+
+        for (int i = 0; i < DAYS; i++) {
+            LocalDate date = latestDate.minusDays(i);
+            String url = buildGkgUrl(date);
+
             try {
-                files.add(file);
-                records.addAll(csvParser.parse(file, MAX_ROWS_PER_FILE));
+                Path csvFile = fileDownloader.downloadAndUnzipCsv(url);
+                csvFiles.add(csvFile);
+                records.addAll(csvParser.parseCsv(csvFile, MAX_ROWS_PER_FILE));
             } catch (Exception ex) {
-                // 개별 파일 실패는 건너뛰고 계속
                 org.slf4j.LoggerFactory.getLogger(GdeltRawNewsProvider.class)
-                        .warn("Skipping GDELT file {}: {}", file.getFileName(), ex.getMessage());
+                        .warn("Skipping GDELT file {}: {}", url, ex.getMessage());
             }
         }
+
         fileCache.enforceMaxFiles(MAX_CACHED_FILES);
+
         return new GdeltRawSample(
                 startDate,
-                30,
+                DAYS,
                 SAMPLE_TIME,
-                selected.size(),
+                csvFiles.size(),
                 records.size(),
-                files,
+                csvFiles,
                 records
         );
+    }
+
+    private String buildGkgUrl(LocalDate date) {
+        String mmdd = date.format(java.time.format.DateTimeFormatter.ofPattern("MMdd"));
+        return "http://data.gdeltproject.org/gdeltv2/" + YEAR + mmdd + "180000.gkg.csv.zip";
     }
 }
