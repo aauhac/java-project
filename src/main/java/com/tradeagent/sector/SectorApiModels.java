@@ -92,4 +92,15 @@ public final class SectorApiModels {
             List<SectorTrendDto> trends
     ) {
     }
+    public record RefreshProgressDto(
+            boolean running,
+            int totalSteps,
+            int currentStep,
+            int percent,
+            String stage,
+            String message,
+            String error,
+            List<String> logs
+    ) {
+    }
 }

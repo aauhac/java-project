@@ -5,6 +5,7 @@ import com.tradeagent.sector.SectorApiModels.NewsEventDto;
 import com.tradeagent.sector.SectorApiModels.PortfolioSectorDiagnosticDto;
 import com.tradeagent.sector.SectorApiModels.PortfolioTrendMatchDto;
 import com.tradeagent.sector.SectorApiModels.RefreshNewsResultDto;
+import com.tradeagent.sector.SectorApiModels.RefreshProgressDto;
 import com.tradeagent.sector.SectorApiModels.SectorOptionDto;
 import com.tradeagent.sector.SectorApiModels.SectorScoreDto;
 import com.tradeagent.sector.SectorApiModels.SectorTrendDto;
@@ -25,11 +26,14 @@ public class SectorController {
 
     private final SectorGkgTrendService sectorGkgTrendService;
     private final PortfolioSectorDiagnosticService portfolioSectorDiagnosticService;
+    private final SectorRefreshProgress sectorRefreshProgress;
 
     public SectorController(SectorGkgTrendService sectorGkgTrendService,
-                            PortfolioSectorDiagnosticService portfolioSectorDiagnosticService) {
+                            PortfolioSectorDiagnosticService portfolioSectorDiagnosticService,
+                            SectorRefreshProgress sectorRefreshProgress) {
         this.sectorGkgTrendService = sectorGkgTrendService;
         this.portfolioSectorDiagnosticService = portfolioSectorDiagnosticService;
+        this.sectorRefreshProgress = sectorRefreshProgress;
     }
 
     @GetMapping("/scores")
@@ -38,6 +42,7 @@ public class SectorController {
                 .map(this::toScoreDto)
                 .sorted(Comparator.comparing(SectorScoreDto::totalSectorScore).reversed())
                 .toList();
+
         return ApiResponse.ok(scores);
     }
 
@@ -46,12 +51,16 @@ public class SectorController {
         List<SectorOptionDto> options = SectorConstants.SUPPORTED_SECTORS.stream()
                 .map(code -> new SectorOptionDto(code, SectorConstants.nameOf(code)))
                 .toList();
+
         return ApiResponse.ok(options);
     }
 
     @GetMapping("/{sectorCode}/score")
     public ApiResponse<SectorScoreDto> getSectorScore(@PathVariable String sectorCode) {
-        String resolvedSectorCode = sectorCode == null ? "" : sectorCode.trim().toUpperCase(java.util.Locale.ROOT);
+        String resolvedSectorCode = sectorCode == null
+                ? ""
+                : sectorCode.trim().toUpperCase(java.util.Locale.ROOT);
+
         SectorScoreDto score = sectorGkgTrendService.getTrendScoresForDate(null).stream()
                 .filter(item -> item.sectorCode().equals(resolvedSectorCode))
                 .map(this::toScoreDto)
@@ -68,6 +77,7 @@ public class SectorController {
                         java.math.BigDecimal.ZERO.setScale(2),
                         "NEUTRAL"
                 ));
+
         return ApiResponse.ok(score);
     }
 
@@ -84,12 +94,22 @@ public class SectorController {
     @PostMapping("/calculate")
     public ApiResponse<List<SectorScoreDto>> calculate() {
         RefreshNewsResultDto refreshed = sectorGkgTrendService.refreshNews();
-        return ApiResponse.ok(refreshed.trends().stream().map(this::toScoreDto).toList());
+
+        return ApiResponse.ok(
+                refreshed.trends().stream()
+                        .map(this::toScoreDto)
+                        .toList()
+        );
     }
 
     @PostMapping("/refresh-news")
     public ApiResponse<RefreshNewsResultDto> refreshNews() {
         return ApiResponse.ok(sectorGkgTrendService.refreshNews());
+    }
+
+    @GetMapping("/refresh-progress")
+    public ApiResponse<RefreshProgressDto> refreshProgress() {
+        return ApiResponse.ok(sectorRefreshProgress.snapshot());
     }
 
     @GetMapping("/trends")
@@ -98,6 +118,7 @@ public class SectorController {
         if (from == null && to == null) {
             return ApiResponse.ok(sectorGkgTrendService.getTrendScoresForDate(null));
         }
+
         return ApiResponse.ok(sectorGkgTrendService.getTrendScores(from, to));
     }
 
@@ -105,10 +126,14 @@ public class SectorController {
     public ApiResponse<List<SectorTrendDto>> getSectorTrend(@PathVariable String sectorCode,
                                                             @RequestParam(required = false) LocalDate from,
                                                             @RequestParam(required = false) LocalDate to) {
-        String resolvedSectorCode = sectorCode == null ? "" : sectorCode.trim().toUpperCase(java.util.Locale.ROOT);
+        String resolvedSectorCode = sectorCode == null
+                ? ""
+                : sectorCode.trim().toUpperCase(java.util.Locale.ROOT);
+
         List<SectorTrendDto> items = sectorGkgTrendService.getTrendScores(from, to).stream()
                 .filter(item -> item.sectorCode().equals(resolvedSectorCode))
                 .toList();
+
         return ApiResponse.ok(items);
     }
 

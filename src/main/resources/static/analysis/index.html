@@ -7,7 +7,7 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/css/style.css">
     <script src="/js/layout.js" defer></script>
-    <script src="/js/api.js?v=20260518-1" defer></script>
+    <script src="/js/api.js?v=20260609-1" defer></script>
     <script src="/js/format.js" defer></script>
 </head>
 <body>
@@ -40,7 +40,9 @@
                 <p class="section-subtitle">TOP 3 사례와 거래 패턴을 요약합니다.</p>
             </div>
         </div>
+
         <div id="opportunity-summary-cards" class="grid cols-4"></div>
+
         <div class="grid cols-2" style="margin-top: 16px;">
             <div class="card">
                 <h3 class="section-title">놓친 기회 TOP 3</h3>
@@ -51,6 +53,7 @@
                 <div id="avoided-list"></div>
             </div>
         </div>
+
         <div class="card" id="patterns-table" style="margin-top: 16px;"></div>
         <div class="card feedback-box" id="opportunity-feedback-box" style="margin-top: 16px;"></div>
     </section>
@@ -61,6 +64,7 @@
                 <h2 class="section-title">섹터 동향 분석</h2>
                 <p class="section-subtitle">저장된 동향을 보고, 필요할 때만 뉴스를 갱신합니다.</p>
             </div>
+
             <div class="form-grid" style="grid-template-columns: repeat(3, minmax(120px, 1fr)); max-width: 520px;">
                 <label class="form-label">
                     기준 날짜
@@ -70,6 +74,34 @@
                 <button class="button" id="refresh-trend-button" type="button" style="align-self: end;">뉴스 갱신</button>
             </div>
         </div>
+
+        <div id="refresh-progress-box" class="card" style="display:none; margin-bottom:16px;">
+            <div style="display:flex; justify-content:space-between; gap:12px; align-items:center;">
+                <div>
+                    <strong id="refresh-progress-title">뉴스 갱신 진행 중</strong>
+                    <div class="muted" id="refresh-progress-message" style="margin-top:6px;">준비 중...</div>
+                </div>
+                <div id="refresh-progress-percent" style="font-size:22px; font-weight:800;">0%</div>
+            </div>
+
+            <div class="bar-track" style="margin-top:14px;">
+                <div id="refresh-progress-fill" class="bar-fill" style="width:0%;"></div>
+            </div>
+
+            <div id="refresh-progress-log"
+                 class="muted"
+                 style="
+             margin-top:14px;
+             max-height:220px;
+             overflow:auto;
+             font-size:13px;
+             line-height:1.6;
+             border-top:1px solid rgba(255,255,255,0.08);
+             padding-top:10px;
+         ">
+            </div>
+        </div>
+
         <div id="sector-scoreboard" class="grid cols-4"></div>
         <div id="diagnostic-cards" class="grid cols-2" style="margin-top: 16px;"></div>
         <div class="card" id="exposure-table" style="margin-top: 16px;"></div>
@@ -79,14 +111,18 @@
 <script>
     const trendState = {
         selectedDate: '',
-        isRefreshing: false
+        isRefreshing: false,
+        progressTimer: null
     };
 
     window.addEventListener('DOMContentLoaded', async () => {
         Layout.mountNavigation('analysis');
+
         const statusHost = document.getElementById('page-status');
+
         initializeTrendDate();
         bindTrendControls();
+
         statusHost.innerHTML = Layout.alert('분석 데이터를 불러오는 중입니다.', 'info');
 
         try {
@@ -126,7 +162,9 @@
 
             renderScores(sectorScoresResponse.data || []);
             renderTrendMatch(sectorTrendMatchResponse.data);
-            renderExposure(hasStoredTrendData(sectorTrendMatchResponse.data) ? (sectorTrendMatchResponse.data?.exposures || []) : []);
+            renderExposure(hasStoredTrendData(sectorTrendMatchResponse.data)
+                ? (sectorTrendMatchResponse.data?.exposures || [])
+                : []);
 
             statusHost.innerHTML = Layout.alert('분석 데이터 로딩이 완료되었습니다.', 'success');
         } catch (error) {
@@ -135,6 +173,8 @@
     });
 
     function renderEvaluationSummary(summary) {
+        summary = summary || {};
+
         const cards = [
             ['종합 판단 점수', Format.score(summary.averageTotalScore), summary.mainWeakness || '요약 약점 정보 없음'],
             ['진입 타이밍', Format.score(summary.averageEntryScore), '평균 Entry 점수'],
@@ -143,6 +183,7 @@
             ['분산 투자', Format.score(summary.averageDiversificationScore), '평균 Diversification 점수'],
             ['섹터 적합성', Format.score(summary.averageSectorFitScore), '평균 Sector Fit 점수']
         ];
+
         document.getElementById('evaluation-summary-cards').innerHTML = cards.map(([label, value, hint]) => `
             <article class="card stat-card">
                 <div class="stat-card__label">${label}</div>
@@ -153,18 +194,24 @@
     }
 
     function renderTradeFeedback(feedback) {
+        feedback = feedback || {};
+
         document.getElementById('trade-feedback-box').innerHTML = `
             <div>${Layout.escapeHtml(feedback.message || '피드백이 없습니다.')}</div>
-            <div class="muted" style="margin-top:10px;">Provider: ${Layout.escapeHtml(feedback.providerType || '-')} / ${Format.dateTime(feedback.createdAt)}</div>
+            <div class="muted" style="margin-top:10px;">
+                Provider: ${Layout.escapeHtml(feedback.providerType || '-')} / ${Format.dateTime(feedback.createdAt)}
+            </div>
         `;
     }
 
     function renderEvaluationTable(items) {
         const host = document.getElementById('evaluations-table');
+
         if (!items.length) {
             host.innerHTML = Layout.empty('거래 평가 데이터가 없습니다.');
             return;
         }
+
         host.innerHTML = `
             <div class="table-wrap">
                 <table class="data-table">
@@ -202,12 +249,15 @@
     }
 
     function renderOpportunitySummary(summary) {
+        summary = summary || {};
+
         const cards = [
             ['놓친 기회 수', Format.integer(summary.missedCount), 'watchlist 이후 상승한 종목'],
             ['피한 위험 수', Format.integer(summary.avoidedCount), '매수하지 않아 피한 하락'],
             ['너무 빨리 판 거래', Format.integer(summary.soldTooEarlyCount), '매도 후 더 오른 거래'],
             ['오래 보유한 거래', Format.integer(summary.heldTooLongCount), '큰 손실 후 정리된 거래']
         ];
+
         document.getElementById('opportunity-summary-cards').innerHTML = cards.map(([label, value, hint]) => `
             <article class="card stat-card">
                 <div class="stat-card__label">${label}</div>
@@ -220,10 +270,12 @@
     function renderOpportunityList(hostId, items, emptyMessage) {
         const host = document.getElementById(hostId);
         const topItems = items.slice(0, 3);
+
         if (!topItems.length) {
             host.innerHTML = Layout.empty(emptyMessage);
             return;
         }
+
         host.innerHTML = topItems.map(item => `
             <article class="card" style="margin-top: 12px;">
                 <div class="section-header" style="margin-bottom: 10px;">
@@ -231,7 +283,9 @@
                         <h3 style="margin:0;">${Layout.escapeHtml(item.symbol)}</h3>
                         <p class="section-subtitle">${Layout.escapeHtml(item.sectorCode)} / ${Format.dateTime(item.detectedAt)}</p>
                     </div>
-                    <div class="${Format.percentClass(item.changeRate)}"><strong>${Format.percent(item.changeRate)}</strong></div>
+                    <div class="${Format.percentClass(item.changeRate)}">
+                        <strong>${Format.percent(item.changeRate)}</strong>
+                    </div>
                 </div>
                 <div class="muted">${Layout.escapeHtml(item.reason || '-')}</div>
                 <div style="margin-top:10px;">${Layout.escapeHtml(item.feedback || '-')}</div>
@@ -241,10 +295,12 @@
 
     function renderPatterns(items) {
         const host = document.getElementById('patterns-table');
+
         if (!items.length) {
             host.innerHTML = Layout.empty('거래 패턴 데이터가 없습니다.');
             return;
         }
+
         host.innerHTML = `
             <div class="table-wrap">
                 <table class="data-table">
@@ -280,26 +336,40 @@
     }
 
     function renderOpportunityFeedback(feedback) {
+        feedback = feedback || {};
+
         document.getElementById('opportunity-feedback-box').innerHTML = `
             <div>${Layout.escapeHtml(feedback.message || '피드백이 없습니다.')}</div>
-            <div class="muted" style="margin-top:10px;">Provider: ${Layout.escapeHtml(feedback.providerType || '-')} / ${Format.dateTime(feedback.createdAt)}</div>
+            <div class="muted" style="margin-top:10px;">
+                Provider: ${Layout.escapeHtml(feedback.providerType || '-')} / ${Format.dateTime(feedback.createdAt)}
+            </div>
         `;
     }
 
     function renderScores(scores) {
         const host = document.getElementById('sector-scoreboard');
+
         if (!scores.length) {
             host.innerHTML = Layout.empty('저장된 뉴스 데이터가 없습니다. 뉴스 갱신 버튼을 눌러주세요.');
             return;
         }
+
         host.innerHTML = scores.map(score => `
             <article class="card stat-card">
                 <div class="stat-card__label">${Layout.escapeHtml(score.sectorCode)}</div>
                 <div class="stat-card__value">${Format.score(score.totalSectorScore)}</div>
                 <div>${Layout.statusPill(score.status)}</div>
-                <div class="stat-card__hint">${Layout.escapeHtml(score.sectorName)} / ${Format.date(score.scoreDate)} / 기사 ${Format.integer(score.articleCount || 0)}건</div>
-                <div class="muted">Tone ${Format.number(score.avgToneScore, 2)} / Keyword ${Format.number(score.keywordStrengthScore, 2)}</div>
-                <div class="bar-track"><div class="bar-fill ${score.status === 'STRONG' ? 'success' : score.status === 'WEAK' ? 'danger' : ''}" style="width: ${Math.min(Number(score.totalSectorScore) || 0, 100)}%"></div></div>
+                <div class="stat-card__hint">
+                    ${Layout.escapeHtml(score.sectorName)} / ${Format.date(score.scoreDate)} / 기사 ${Format.integer(score.articleCount || 0)}건
+                </div>
+                <div class="muted">
+                    Tone ${Format.number(score.avgToneScore, 2)} / Keyword ${Format.number(score.keywordStrengthScore, 2)}
+                </div>
+                <div class="bar-track">
+                    <div class="bar-fill ${score.status === 'STRONG' ? 'success' : score.status === 'WEAK' ? 'danger' : ''}"
+                         style="width: ${Math.min(Number(score.totalSectorScore) || 0, 100)}%">
+                    </div>
+                </div>
             </article>
         `).join('');
     }
@@ -309,10 +379,12 @@
             document.getElementById('diagnostic-cards').innerHTML = Layout.empty('포트폴리오 동향 일치도 데이터가 없습니다.');
             return;
         }
+
         if ((diagnostic.message || '').includes('동향 분석 버튼')) {
             document.getElementById('diagnostic-cards').innerHTML = Layout.empty(diagnostic.message);
             return;
         }
+
         document.getElementById('diagnostic-cards').innerHTML = `
             <article class="card stat-card">
                 <div class="stat-card__label">동향 일치도</div>
@@ -321,7 +393,9 @@
             </article>
             <article class="card stat-card">
                 <div class="stat-card__label">강/약 노출</div>
-                <div class="stat-card__value">강 ${Format.percent(diagnostic.strongExposure)} / 약 ${Format.percent(diagnostic.weakExposure)}</div>
+                <div class="stat-card__value">
+                    강 ${Format.percent(diagnostic.strongExposure)} / 약 ${Format.percent(diagnostic.weakExposure)}
+                </div>
                 <div class="stat-card__hint">${Layout.escapeHtml(diagnostic.message || '진단 문장이 없습니다.')}</div>
             </article>
         `;
@@ -329,10 +403,12 @@
 
     function renderExposure(items) {
         const host = document.getElementById('exposure-table');
+
         if (!items.length) {
             host.innerHTML = Layout.empty('포트폴리오 섹터 노출 데이터가 없습니다.');
             return;
         }
+
         host.innerHTML = `
             <div class="table-wrap">
                 <table class="data-table">
@@ -378,22 +454,121 @@
             if (trendState.isRefreshing) {
                 return;
             }
+
             await reloadTrendPanels(true);
         });
+    }
+
+    function showRefreshProgress() {
+        const box = document.getElementById('refresh-progress-box');
+        const title = document.getElementById('refresh-progress-title');
+        const fill = document.getElementById('refresh-progress-fill');
+        const percent = document.getElementById('refresh-progress-percent');
+        const message = document.getElementById('refresh-progress-message');
+        const logBox = document.getElementById('refresh-progress-log');
+
+        box.style.display = 'block';
+        title.textContent = '뉴스 갱신 진행 중';
+        fill.style.width = '0%';
+        percent.textContent = '0%';
+        message.textContent = '뉴스 갱신을 시작합니다.';
+
+        if (logBox) {
+            logBox.innerHTML = '<div>세부 로그를 기다리는 중입니다.</div>';
+        }
+    }
+
+    function hideRefreshProgressLater() {
+        setTimeout(() => {
+            const box = document.getElementById('refresh-progress-box');
+
+            if (!trendState.isRefreshing) {
+                box.style.display = 'none';
+            }
+        }, 2500);
+    }
+
+    function startRefreshProgressPolling() {
+        stopRefreshProgressPolling();
+
+        trendState.progressTimer = setInterval(async () => {
+            try {
+                const response = await API.getSectorRefreshProgress();
+                renderRefreshProgress(response.data);
+            } catch (error) {
+                console.warn('진행도 조회 실패:', error);
+            }
+        }, 800);
+    }
+
+    function stopRefreshProgressPolling() {
+        if (trendState.progressTimer) {
+            clearInterval(trendState.progressTimer);
+            trendState.progressTimer = null;
+        }
+    }
+
+    function renderRefreshProgress(progress) {
+        if (!progress) {
+            return;
+        }
+
+        const box = document.getElementById('refresh-progress-box');
+        const title = document.getElementById('refresh-progress-title');
+        const message = document.getElementById('refresh-progress-message');
+        const fill = document.getElementById('refresh-progress-fill');
+        const percent = document.getElementById('refresh-progress-percent');
+        const logBox = document.getElementById('refresh-progress-log');
+
+        const value = Math.max(0, Math.min(Number(progress.percent || 0), 100));
+
+        box.style.display = 'block';
+        fill.style.width = `${value}%`;
+        percent.textContent = `${value}%`;
+
+        if (progress.error) {
+            title.textContent = '뉴스 갱신 실패';
+            message.textContent = progress.error;
+        } else {
+            title.textContent = progress.running ? '뉴스 갱신 진행 중' : '뉴스 갱신 완료';
+            message.textContent = `[${progress.stage || '-'}] ${progress.message || ''}`;
+        }
+
+        const logs = progress.logs || [];
+        if (logBox) {
+            if (!logs.length) {
+                logBox.innerHTML = '<div>세부 로그가 아직 없습니다.</div>';
+            } else {
+                logBox.innerHTML = logs
+                    .slice()
+                    .reverse()
+                    .map(item => `<div>${Layout.escapeHtml(item)}</div>`)
+                    .join('');
+            }
+        }
     }
 
     async function reloadTrendPanels(refreshNews) {
         const statusHost = document.getElementById('page-status');
         const refreshButton = document.getElementById('refresh-trend-button');
+
         if (refreshNews) {
             trendState.isRefreshing = true;
             refreshButton.disabled = true;
+            showRefreshProgress();
+            startRefreshProgressPolling();
         }
-        statusHost.innerHTML = Layout.alert(refreshNews ? '뉴스를 갱신하는 중입니다.' : '선택 날짜의 저장된 섹터 동향을 불러오는 중입니다.', 'info');
+
+        statusHost.innerHTML = Layout.alert(
+            refreshNews ? '뉴스를 갱신하는 중입니다.' : '선택 날짜의 저장된 섹터 동향을 불러오는 중입니다.',
+            'info'
+        );
+
         try {
             let trendsResponse;
             let trendMatchResponse;
             let refreshMeta = null;
+
             if (refreshNews) {
                 const response = await API.refreshSectorNews();
                 trendsResponse = {data: response.data?.trends || []};
@@ -405,32 +580,62 @@
                     API.getPortfolioTrendMatch(1, trendState.selectedDate)
                 ]);
             }
+
             renderScores(trendsResponse.data || []);
             renderTrendMatch(trendMatchResponse.data);
-            renderExposure(hasStoredTrendData(trendMatchResponse.data) ? (trendMatchResponse.data?.exposures || []) : []);
-            const hasArticles = (trendsResponse.data || []).some(score => Number(score.articleCount || 0) > 0);
+            renderExposure(hasStoredTrendData(trendMatchResponse.data)
+                ? (trendMatchResponse.data?.exposures || [])
+                : []);
+
+            const hasArticles = (trendsResponse.data || [])
+                .some(score => Number(score.articleCount || 0) > 0);
+
             if (refreshNews && !hasArticles) {
                 const sampleFileCount = Number(refreshMeta?.sampleFileCount || 0);
                 const rawRecordCount = Number(refreshMeta?.rawRecordCount || 0);
+
                 if (sampleFileCount === 0) {
-                    statusHost.innerHTML = Layout.alert('뉴스 갱신은 완료됐지만 선택된 GKG 파일이 0개입니다. 날짜 범위를 바꿔 다시 시도하세요.', 'warning');
+                    statusHost.innerHTML = Layout.alert(
+                        '뉴스 갱신은 완료됐지만 선택된 GKG 파일이 0개입니다. 날짜 범위를 바꿔 다시 시도하세요.',
+                        'warning'
+                    );
                 } else if (rawRecordCount === 0) {
-                    statusHost.innerHTML = Layout.alert(`뉴스 갱신은 완료됐지만 파싱된 GKG 레코드가 0건입니다. (파일 ${sampleFileCount}개)`, 'warning');
+                    statusHost.innerHTML = Layout.alert(
+                        `뉴스 갱신은 완료됐지만 파싱된 GKG 레코드가 0건입니다. (파일 ${sampleFileCount}개)`,
+                        'warning'
+                    );
                 } else {
-                    statusHost.innerHTML = Layout.alert(`뉴스 갱신은 완료됐지만 섹터 키워드 매칭 결과가 0건입니다. (파일 ${sampleFileCount}개 / 레코드 ${rawRecordCount}건)`, 'warning');
+                    statusHost.innerHTML = Layout.alert(
+                        `뉴스 갱신은 완료됐지만 섹터 키워드 매칭 결과가 0건입니다. (파일 ${sampleFileCount}개 / 레코드 ${rawRecordCount}건)`,
+                        'warning'
+                    );
                 }
             } else {
-                statusHost.innerHTML = Layout.alert(refreshNews ? '뉴스 갱신이 완료되었습니다.' : '날짜별 섹터 동향을 불러왔습니다.', 'success');
+                statusHost.innerHTML = Layout.alert(
+                    refreshNews ? '뉴스 갱신이 완료되었습니다.' : '날짜별 섹터 동향을 불러왔습니다.',
+                    'success'
+                );
             }
         } catch (error) {
             const message = refreshNews
                 ? `호출에 실패했습니다. ${error.message || '뉴스를 갱신하지 못했습니다.'}`
                 : (error.message || '섹터 동향을 불러오지 못했습니다.');
+
             statusHost.innerHTML = Layout.alert(message, 'error');
         } finally {
             if (refreshNews) {
                 trendState.isRefreshing = false;
                 refreshButton.disabled = false;
+
+                try {
+                    const progressResponse = await API.getSectorRefreshProgress();
+                    renderRefreshProgress(progressResponse.data);
+                } catch (_) {
+                    // ignore
+                }
+
+                stopRefreshProgressPolling();
+                hideRefreshProgressLater();
             }
         }
     }

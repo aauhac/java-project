@@ -21,90 +21,209 @@ import java.util.Map;
 public class SectorNewsSentimentService {
 
     private static final int TOP_RECORDS_FOR_LLM = 20;
-    private static final BigDecimal MIN_ADJUSTMENT = BigDecimal.valueOf(-15);
-    private static final BigDecimal MAX_ADJUSTMENT = BigDecimal.valueOf(15);
-    private static final String FALLBACK_REASON = "GDELT GKG tone 기반 점수";
+    private static final BigDecimal DEFAULT_LLM_SCORE = BigDecimal.valueOf(50).setScale(2, RoundingMode.HALF_UP);
+    private static final String FALLBACK_REASON = "vLLM 분석을 사용할 수 없어 중립 점수로 처리했습니다.";
 
     private final VllmClient vllmClient;
     private final VllmProperties vllmProperties;
     private final SectorRecordRanker sectorRecordRanker;
+    private final SectorRefreshProgress progress;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public SectorNewsSentimentService(VllmClient vllmClient,
                                       VllmProperties vllmProperties,
-                                      SectorRecordRanker sectorRecordRanker) {
+                                      SectorRecordRanker sectorRecordRanker,
+                                      SectorRefreshProgress progress) {
         this.vllmClient = vllmClient;
         this.vllmProperties = vllmProperties;
         this.sectorRecordRanker = sectorRecordRanker;
+        this.progress = progress;
     }
 
     public Map<String, SectorSentimentResult> analyzeBySector(List<SectorRecordGroup> groups) {
         Map<String, SectorSentimentResult> results = new LinkedHashMap<>();
+
+        int index = 0;
+        int baseStep = 32; // 1~30 다운로드, 31 분류, 32 집계 이후 vLLM 시작
+
         for (SectorRecordGroup group : groups) {
+            index++;
+            progress.update(
+                    "LLM_ANALYSIS",
+                    baseStep + index,
+                    "vLLM 섹터 감정 분석 중: " + group.sectorCode() + " (" + index + "/" + groups.size() + ")"
+            );
+
             results.put(group.sectorCode(), analyzeSingleSector(group));
         }
+
         return results;
     }
 
     private SectorSentimentResult analyzeSingleSector(SectorRecordGroup group) {
-        if (!vllmProperties.isEnabled() || group.records().isEmpty()) {
+        if (!vllmProperties.isEnabled()) {
+            progress.log("LLM_SKIP", group.sectorCode() + " vLLM 비활성화 상태 → 중립 점수 사용");
             return fallback(group.sectorCode());
         }
 
-        List<GdeltGkgRecord> topRecords = sectorRecordRanker.selectTopRecords(group.sectorCode(), group.records(), TOP_RECORDS_FOR_LLM);
-        String prompt = buildPrompt(group, topRecords);
-        String response = vllmClient.generateText(prompt);
-        return parseResponse(group.sectorCode(), response);
+        if (group.records().isEmpty()) {
+            progress.log("LLM_SKIP", group.sectorCode() + " 분석할 뉴스 레코드 없음 → 중립 점수 사용");
+            return fallback(group.sectorCode());
+        }
+
+        try {
+            List<GdeltGkgRecord> topRecords =
+                    sectorRecordRanker.selectTopRecords(group.sectorCode(), group.records(), TOP_RECORDS_FOR_LLM);
+
+            progress.log(
+                    "LLM_ANALYSIS",
+                    group.sectorCode() + " vLLM 입력 레코드 " + topRecords.size() + "건 생성"
+            );
+
+            String prompt = buildPrompt(group, topRecords);
+
+            progress.log(
+                    "LLM_ANALYSIS",
+                    group.sectorCode() + " vLLM 호출 시작"
+            );
+
+            String response = vllmClient.generateText(prompt);
+            SectorSentimentResult result = parseResponse(group.sectorCode(), response);
+
+            progress.log(
+                    "LLM_ANALYSIS",
+                    group.sectorCode() + " vLLM 분석 완료: "
+                            + result.sentimentLabel()
+                            + " / " + result.llmScore() + "점"
+            );
+
+            return result;
+        } catch (Exception ex) {
+            progress.log(
+                    "LLM_WARN",
+                    group.sectorCode() + " vLLM 분석 실패 → 중립 점수 사용 / " + ex.getMessage()
+            );
+
+            return fallback(group.sectorCode());
+        }
     }
 
     private String buildPrompt(SectorRecordGroup group, List<GdeltGkgRecord> topRecords) {
         StringBuilder builder = new StringBuilder();
-        builder.append("Return strict JSON only.\n");
-        builder.append("Fields: sentimentLabel, sentimentAdjustment, reason, positiveFactors, riskFactors\n");
-        builder.append("sentimentAdjustment must be a number between -15 and 15.\n");
+
+        builder.append("Return strict JSON only. Do not use markdown. Do not wrap the answer in ```json.\n");
+        builder.append("You are not giving investment advice. Analyze only news sentiment and sector condition.\n");
+        builder.append("The output JSON fields must be:\n");
+        builder.append("{\n");
+        builder.append("  \"sentimentLabel\": \"STRONG|NEUTRAL|WEAK\",\n");
+        builder.append("  \"llmScore\": 0-100,\n");
+        builder.append("  \"reason\": \"short Korean explanation\",\n");
+        builder.append("  \"positiveFactors\": [\"...\"],\n");
+        builder.append("  \"riskFactors\": [\"...\"]\n");
+        builder.append("}\n\n");
+
         builder.append("sectorCode: ").append(group.sectorCode()).append('\n');
+        builder.append("sectorName: ").append(SectorConstants.nameOf(group.sectorCode())).append('\n');
         builder.append("articleCount: ").append(group.articleCount()).append('\n');
         builder.append("avgTone: ").append(group.avgTone()).append('\n');
         builder.append("toneScore: ").append(group.toneScore()).append('\n');
         builder.append("keywordStrengthScore: ").append(group.keywordStrengthScore()).append('\n');
         builder.append("topThemes: ").append(group.topThemes()).append('\n');
         builder.append("topOrganizations: ").append(group.topOrganizations()).append('\n');
-        builder.append("sampleRecords:\n");
-        for (GdeltGkgRecord record : topRecords) {
-            builder.append("- titleSource=").append(safe(record.sourceName()))
-                    .append(", url=").append(safe(record.documentUrl()))
-                    .append(", themes=").append(safe(record.v2Themes()))
-                    .append(", orgs=").append(safe(record.v2Organizations()))
-                    .append(", tone=").append(record.tone())
-                    .append('\n');
+
+        builder.append("\nmergedNewsText:\n");
+        builder.append(buildMergedNewsText(topRecords)).append('\n');
+
+        return builder.toString();
+    }
+
+    private String buildMergedNewsText(List<GdeltGkgRecord> records) {
+        StringBuilder builder = new StringBuilder();
+
+        for (GdeltGkgRecord record : records) {
+            builder.append("[")
+                    .append(safe(record.sourceName()))
+                    .append("] ")
+                    .append("themes=").append(safe(record.v2Themes()))
+                    .append("; orgs=").append(safe(record.v2Organizations()))
+                    .append("; tone=").append(record.tone())
+                    .append("; url=").append(safe(record.documentUrl()))
+                    .append(" | ");
         }
+
         return builder.toString();
     }
 
     private SectorSentimentResult parseResponse(String sectorCode, String response) {
         try {
-            JsonNode root = objectMapper.readTree(response);
-            String label = root.path("sentimentLabel").asText("NEUTRAL");
-            BigDecimal adjustment = new BigDecimal(root.path("sentimentAdjustment").asText("0"))
-                    .max(MIN_ADJUSTMENT)
-                    .min(MAX_ADJUSTMENT)
+            String cleaned = cleanJsonResponse(response);
+            JsonNode root = objectMapper.readTree(cleaned);
+
+            String label = root.path("sentimentLabel").asText("NEUTRAL").trim().toUpperCase();
+            if (!label.equals("STRONG") && !label.equals("NEUTRAL") && !label.equals("WEAK")) {
+                label = "NEUTRAL";
+            }
+
+            BigDecimal llmScore = new BigDecimal(root.path("llmScore").asText("50"))
+                    .max(BigDecimal.ZERO)
+                    .min(BigDecimal.valueOf(100))
                     .setScale(2, RoundingMode.HALF_UP);
+
             String reason = root.path("reason").asText(FALLBACK_REASON);
             List<String> positiveFactors = toStringList(root.path("positiveFactors"));
             List<String> riskFactors = toStringList(root.path("riskFactors"));
-            return new SectorSentimentResult(sectorCode, label, adjustment, reason, positiveFactors, riskFactors);
+
+            return new SectorSentimentResult(
+                    sectorCode,
+                    label,
+                    llmScore,
+                    reason,
+                    positiveFactors,
+                    riskFactors
+            );
         } catch (Exception ex) {
             return fallback(sectorCode);
         }
     }
 
+    private String cleanJsonResponse(String response) {
+        if (response == null) {
+            return "{}";
+        }
+
+        String cleaned = response.trim();
+
+        if (cleaned.startsWith("```json")) {
+            cleaned = cleaned.substring("```json".length()).trim();
+        }
+
+        if (cleaned.startsWith("```")) {
+            cleaned = cleaned.substring("```".length()).trim();
+        }
+
+        if (cleaned.endsWith("```")) {
+            cleaned = cleaned.substring(0, cleaned.length() - 3).trim();
+        }
+
+        int start = cleaned.indexOf('{');
+        int end = cleaned.lastIndexOf('}');
+
+        if (start >= 0 && end > start) {
+            return cleaned.substring(start, end + 1);
+        }
+
+        return cleaned;
+    }
+
     private List<String> toStringList(JsonNode node) {
         List<String> items = new ArrayList<>();
+
         if (node != null && node.isArray()) {
             for (JsonNode item : node) {
                 items.add(item.asText());
             }
         }
+
         return items;
     }
 
@@ -112,7 +231,7 @@ public class SectorNewsSentimentService {
         return new SectorSentimentResult(
                 sectorCode,
                 "NEUTRAL",
-                BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP),
+                DEFAULT_LLM_SCORE,
                 FALLBACK_REASON,
                 List.of(),
                 List.of()

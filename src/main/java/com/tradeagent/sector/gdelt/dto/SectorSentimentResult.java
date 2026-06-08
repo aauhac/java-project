@@ -6,7 +6,7 @@ import java.util.List;
 public record SectorSentimentResult(
         String sectorCode,
         String sentimentLabel,
-        BigDecimal sentimentAdjustment,
+        BigDecimal llmScore,
         String reason,
         List<String> positiveFactors,
         List<String> riskFactors

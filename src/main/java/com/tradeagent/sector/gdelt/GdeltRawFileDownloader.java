@@ -2,9 +2,6 @@ package com.tradeagent.sector.gdelt;
 import java.nio.file.StandardCopyOption;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
-import com.tradeagent.common.ErrorCode;
-import com.tradeagent.common.ExternalApiException;
-import com.tradeagent.sector.gdelt.dto.GdeltRawFileRef;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
