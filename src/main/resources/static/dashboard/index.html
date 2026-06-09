@@ -7,7 +7,7 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/css/style.css">
     <script src="/js/layout.js" defer></script>
-    <script src="/js/api.js?v=20260517-2" defer></script>
+    <script src="/js/api.js?v=20260609-watchlist-2" defer></script>
     <script src="/js/format.js" defer></script>
     <script src="/js/charts.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
@@ -46,7 +46,10 @@
                             <input class="input" id="end" name="end" type="date" required>
                         </label>
                     </form>
-                    <button id="load-chart-button" class="button" type="button">차트 조회</button>
+                    <div style="display:flex; gap:8px; align-items:end;">
+                        <button id="load-chart-button" class="button" type="button">차트 조회</button>
+                        <button id="add-watchlist-button" class="button secondary" type="button">관심종목 추가</button>
+                    </div>
                 </div>
                 <div id="chart-status" class="alert alert-info">차트 데이터를 불러올 준비가 되었습니다.</div>
                 <div id="dashboard-chart" class="chart-host"></div>
@@ -118,6 +121,18 @@
     <section class="section">
         <div class="section-header">
             <div>
+                <section class="section">
+                    <div class="section-header">
+                        <div>
+                            <h2 class="section-title">Watchlist</h2>
+                            <p class="section-subtitle">차트 조회 후 관심종목으로 추가한 종목을 확인합니다.</p>
+                        </div>
+                        <button class="button secondary" id="remove-watchlist-button" type="button">관심 종목 제거</button>
+                    </div>
+                    <div class="card">
+                        <div id="watchlist-table"></div>
+                    </div>
+                </section>
                 <h2 class="section-title">보유 종목</h2>
                 <p class="section-subtitle">행의 버튼을 누르면 상단 차트가 해당 종목으로 전환됩니다.</p>
             </div>
@@ -200,6 +215,15 @@
             await loadChart();
         });
 
+        document.getElementById('add-watchlist-button').addEventListener('click', async () => {
+            readChartFormValues();
+            await addSelectedSymbolToWatchlist();
+        });
+
+        document.getElementById('remove-watchlist-button').addEventListener('click', async () => {
+            await removeSelectedWatchlistItems();
+        });
+
         document.getElementById('chart-form').addEventListener('submit', async (event) => {
             event.preventDefault();
             readChartFormValues();
@@ -235,16 +259,20 @@
         const statusHost = document.getElementById('page-status');
         statusHost.innerHTML = Layout.alert('포트폴리오 데이터를 불러오는 중입니다.', 'info');
         try {
-            const [summaryResponse, positionsResponse, sectorsResponse, tradeHistoryResponse] = await Promise.all([
+            const [summaryResponse, positionsResponse, sectorsResponse, tradeHistoryResponse, watchlistResponse] = await Promise.all([
                 API.getPortfolioSummary(1),
                 API.getPortfolioPositions(1),
                 API.getSectorAllocation(1),
-                API.getTradeHistory(1)
+                API.getTradeHistory(1),
+                API.getWatchlist(1)
             ]);
+
             renderSummary(summaryResponse.data);
             renderPositions(positionsResponse.data || []);
             renderSectorAllocation(sectorsResponse.data || []);
             renderTradeHistory(tradeHistoryResponse.data || []);
+            renderWatchlist(watchlistResponse.data || []);
+
             statusHost.innerHTML = Layout.alert('포트폴리오 데이터 로딩이 완료되었습니다.', 'success');
         } catch (error) {
             statusHost.innerHTML = Layout.alert(error.message || '대시보드 데이터를 불러오지 못했습니다.', 'error');
@@ -396,6 +424,209 @@
         `;
     }
 
+    function renderWatchlist(items) {
+        const host = document.getElementById('watchlist-table');
+
+        if (!items.length) {
+            host.innerHTML = Layout.empty('관심 종목이 없습니다. 차트 조회 후 관심종목 추가 버튼을 눌러 등록하세요.');
+            return;
+        }
+
+        host.innerHTML = `
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                <tr>
+                    <th>선택</th>
+                    <th>종목 코드</th>
+                    <th>등록일</th>
+                    <th>등록 이후 변동률</th>
+                    <th>차트</th>
+                </tr>
+                </thead>
+                <tbody>
+                ${items.map(item => `
+                    <tr>
+                        <td>
+                            <input type="checkbox"
+                                   class="watchlist-check"
+                                   value="${Layout.escapeHtml(item.symbol)}">
+                        </td>
+                        <td><strong>${Layout.escapeHtml(item.symbol)}</strong></td>
+                        <td>${Format.dateTime(item.registeredAt)}</td>
+                        <td class="${Format.percentClass(item.changeRate)}">${Format.percent(item.changeRate)}</td>
+                        <td>
+                            <button class="button secondary watchlist-chart-select"
+                                    data-symbol="${Layout.escapeHtml(item.symbol)}"
+                                    type="button">차트 보기</button>
+                        </td>
+                    </tr>
+                `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+
+        host.querySelectorAll('.watchlist-chart-select').forEach((button) => {
+            button.addEventListener('click', async () => {
+                state.selectedSymbol = button.dataset.symbol || state.selectedSymbol;
+                document.getElementById('symbol').value = state.selectedSymbol;
+                syncFormsWithSelectedSymbol();
+                await loadChart();
+            });
+        });
+    }
+
+    async function addSelectedSymbolToWatchlist() {
+        const statusHost = document.getElementById('page-status');
+        const symbol = String(state.selectedSymbol || '').trim().toUpperCase();
+
+        if (!symbol) {
+            statusHost.innerHTML = Layout.alert('관심종목으로 추가할 종목 코드가 없습니다.', 'error');
+            return;
+        }
+
+        try {
+            await API.addWatchlist({
+                userId: 1,
+                symbol
+            });
+
+            statusHost.innerHTML = Layout.alert(`Watchlist 추가 완료: ${symbol}`, 'success');
+            await refreshPortfolioPanels();
+        } catch (error) {
+            statusHost.innerHTML = Layout.alert(error.message || 'Watchlist 추가에 실패했습니다.', 'error');
+        }
+    }
+
+    async function removeSelectedWatchlistItems() {
+        const statusHost = document.getElementById('page-status');
+        const checked = Array.from(document.querySelectorAll('.watchlist-check:checked'));
+        const symbols = checked.map(item => item.value).filter(Boolean);
+
+        if (!symbols.length) {
+            statusHost.innerHTML = Layout.alert('제거할 관심 종목을 선택하세요.', 'warning');
+            return;
+        }
+
+        try {
+            await API.removeWatchlistItems({
+                userId: 1,
+                symbols
+            });
+
+            statusHost.innerHTML = Layout.alert(`Watchlist 제거 완료: ${symbols.join(', ')}`, 'success');
+            await refreshPortfolioPanels();
+        } catch (error) {
+            statusHost.innerHTML = Layout.alert(error.message || 'Watchlist 제거에 실패했습니다.', 'error');
+        }
+    }
+
+    function renderWatchlist(items) {
+        const host = document.getElementById('watchlist-table');
+
+        if (!items.length) {
+            host.innerHTML = Layout.empty('관심 종목이 없습니다. 차트 조회 후 관심종목 추가 버튼을 눌러 등록하세요.');
+            return;
+        }
+
+        host.innerHTML = `
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                <tr>
+                    <th>선택</th>
+                    <th>종목 코드</th>
+                    <th>기준일</th>
+                    <th>기준일 이후 변동률</th>
+                    <th>차트</th>
+                </tr>
+                </thead>
+                <tbody>
+                ${items.map(item => `
+                    <tr>
+                        <td>
+                            <input type="checkbox"
+                                   class="watchlist-check"
+                                   value="${Layout.escapeHtml(item.symbol)}">
+                        </td>
+                        <td><strong>${Layout.escapeHtml(item.symbol)}</strong></td>
+                        <td>${Layout.escapeHtml(item.watchStartDate || '-')}</td>
+                        <td class="${Format.percentClass(item.changeRate)}">${Format.percent(item.changeRate)}</td>
+                        <td>
+                            <button class="button secondary watchlist-chart-select"
+                                    data-symbol="${Layout.escapeHtml(item.symbol)}"
+                                    type="button">차트 보기</button>
+                        </td>
+                    </tr>
+                `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+
+        host.querySelectorAll('.watchlist-chart-select').forEach((button) => {
+            button.addEventListener('click', async () => {
+                state.selectedSymbol = button.dataset.symbol || state.selectedSymbol;
+                document.getElementById('symbol').value = state.selectedSymbol;
+                syncFormsWithSelectedSymbol();
+                await loadChart();
+            });
+        });
+    }
+
+    async function addSelectedSymbolToWatchlist() {
+        const statusHost = document.getElementById('page-status');
+        const symbol = String(state.selectedSymbol || '').trim().toUpperCase();
+        const watchStartDate = state.selectedStart;
+
+        if (!symbol) {
+            statusHost.innerHTML = Layout.alert('관심종목으로 추가할 종목 코드가 없습니다.', 'error');
+            return;
+        }
+
+        if (!watchStartDate) {
+            statusHost.innerHTML = Layout.alert('관심종목 기준일로 사용할 시작일이 없습니다.', 'error');
+            return;
+        }
+
+        try {
+            await API.addWatchlist({
+                userId: 1,
+                symbol,
+                watchStartDate
+            });
+
+            statusHost.innerHTML = Layout.alert(`Watchlist 추가 완료: ${symbol} / 기준일 ${watchStartDate}`, 'success');
+            await refreshPortfolioPanels();
+        } catch (error) {
+            statusHost.innerHTML = Layout.alert(error.message || 'Watchlist 추가에 실패했습니다.', 'error');
+        }
+    }
+
+    async function removeSelectedWatchlistItems() {
+        const statusHost = document.getElementById('page-status');
+        const checked = Array.from(document.querySelectorAll('.watchlist-check:checked'));
+        const symbols = checked.map(item => item.value).filter(Boolean);
+
+        if (!symbols.length) {
+            statusHost.innerHTML = Layout.alert('제거할 관심 종목을 선택하세요.', 'warning');
+            return;
+        }
+
+        try {
+            await API.removeWatchlistItems({
+                userId: 1,
+                symbols
+            });
+
+            statusHost.innerHTML = Layout.alert(`Watchlist 제거 완료: ${symbols.join(', ')}`, 'success');
+            await refreshPortfolioPanels();
+        } catch (error) {
+            statusHost.innerHTML = Layout.alert(error.message || 'Watchlist 제거에 실패했습니다.', 'error');
+        }
+    }
+    
     function renderTradeHistory(items) {
         const host = document.getElementById('trade-history-table');
         if (!items.length) {

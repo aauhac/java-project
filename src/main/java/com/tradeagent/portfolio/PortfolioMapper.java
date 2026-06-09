@@ -5,7 +5,6 @@ import com.tradeagent.portfolio.PortfolioApiModels.PortfolioSummaryDto;
 import com.tradeagent.portfolio.PortfolioApiModels.PositionDto;
 import com.tradeagent.portfolio.PortfolioApiModels.SectorAllocationDto;
 import com.tradeagent.portfolio.PortfolioApiModels.TradeHistoryDto;
-import com.tradeagent.portfolio.PortfolioApiModels.WatchlistDto;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -25,7 +24,8 @@ public class PortfolioMapper {
             Map.entry("CLOUD", "Cloud"),
             Map.entry("ENERGY", "Energy"),
             Map.entry("FIN", "Financial"),
-            Map.entry("TECH", "Technology")
+            Map.entry("TECH", "Technology"),
+            Map.entry("WATCH", "Watchlist")
     );
 
     public PositionDto toPositionDto(PortfolioPosition position, LatestQuote latestQuote) {
@@ -33,6 +33,7 @@ public class PortfolioMapper {
         BigDecimal marketValue = position.calculateMarketValue(currentPrice);
         BigDecimal profitLoss = position.calculateProfitLoss(currentPrice);
         BigDecimal returnRate = position.calculateReturnRate(currentPrice);
+
         return new PositionDto(
                 position.getSymbol(),
                 position.getSectorCode(),
@@ -49,6 +50,7 @@ public class PortfolioMapper {
         BigDecimal safeBuyAmount = scale4(totalBuyAmount);
         BigDecimal safeMarketValue = scale4(totalMarketValue);
         BigDecimal profitLoss = scale4(safeMarketValue.subtract(safeBuyAmount));
+
         BigDecimal totalReturnRate = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         if (safeBuyAmount.compareTo(BigDecimal.ZERO) > 0) {
             totalReturnRate = profitLoss
@@ -63,22 +65,15 @@ public class PortfolioMapper {
     public SectorAllocationDto toSectorAllocationDto(String sectorCode, BigDecimal marketValue, BigDecimal totalMarketValue) {
         BigDecimal safeMarketValue = scale4(marketValue);
         BigDecimal allocationRate = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+
         if (totalMarketValue.compareTo(BigDecimal.ZERO) > 0) {
             allocationRate = safeMarketValue
                     .divide(totalMarketValue, 6, RoundingMode.HALF_UP)
                     .multiply(BigDecimal.valueOf(100))
                     .setScale(2, RoundingMode.HALF_UP);
         }
-        return new SectorAllocationDto(sectorCode, resolveSectorName(sectorCode), safeMarketValue, allocationRate);
-    }
 
-    public WatchlistDto toWatchlistDto(WatchlistItem item, LatestQuote latestQuote) {
-        return new WatchlistDto(
-                item.getSymbol(),
-                item.getSectorCode(),
-                latestQuote.getLastPrice().setScale(4, RoundingMode.HALF_UP),
-                latestQuote.getChangeRate().setScale(2, RoundingMode.HALF_UP)
-        );
+        return new SectorAllocationDto(sectorCode, resolveSectorName(sectorCode), safeMarketValue, allocationRate);
     }
 
     public TradeHistoryDto toTradeHistoryDto(TradeHistory tradeHistory) {

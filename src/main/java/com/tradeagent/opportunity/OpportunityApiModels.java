@@ -14,6 +14,9 @@ public final class OpportunityApiModels {
             String symbol,
             String sectorCode,
             BigDecimal changeRate,
+            BigDecimal opportunityScore,
+            String grade,
+            int watchDays,
             String reason,
             String feedback,
             LocalDateTime detectedAt

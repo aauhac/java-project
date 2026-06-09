@@ -1,7 +1,9 @@
 package com.tradeagent.portfolio;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public final class PortfolioApiModels {
 
@@ -46,10 +48,22 @@ public final class PortfolioApiModels {
     ) {
     }
 
+    public record WatchlistRequestDto(
+            Long userId,
+            String symbol,
+            LocalDate watchStartDate
+    ) {
+    }
+
+    public record WatchlistRemoveRequestDto(
+            Long userId,
+            List<String> symbols
+    ) {
+    }
+
     public record WatchlistDto(
             String symbol,
-            String sectorCode,
-            BigDecimal currentPrice,
+            LocalDate watchStartDate,
             BigDecimal changeRate
     ) {
     }

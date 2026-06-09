@@ -6,12 +6,10 @@ import com.tradeagent.portfolio.PortfolioApiModels.PositionDto;
 import com.tradeagent.portfolio.PortfolioApiModels.SectorAllocationDto;
 import com.tradeagent.portfolio.PortfolioApiModels.TradeHistoryDto;
 import com.tradeagent.portfolio.PortfolioApiModels.TradeRequestDto;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import com.tradeagent.portfolio.PortfolioApiModels.WatchlistDto;
+import com.tradeagent.portfolio.PortfolioApiModels.WatchlistRemoveRequestDto;
+import com.tradeagent.portfolio.PortfolioApiModels.WatchlistRequestDto;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -20,9 +18,12 @@ import java.util.List;
 public class PortfolioController {
 
     private final PortfolioService portfolioService;
+    private final WatchlistService watchlistService;
 
-    public PortfolioController(PortfolioService portfolioService) {
+    public PortfolioController(PortfolioService portfolioService,
+                               WatchlistService watchlistService) {
         this.portfolioService = portfolioService;
+        this.watchlistService = watchlistService;
     }
 
     @PostMapping("/buy")
@@ -54,5 +55,32 @@ public class PortfolioController {
     @GetMapping("/{userId}/trades")
     public ApiResponse<List<TradeHistoryDto>> getTradeHistory(@PathVariable Long userId) {
         return ApiResponse.ok(portfolioService.getTradeHistory(userId));
+    }
+
+    @GetMapping("/{userId}/watchlist")
+    public ApiResponse<List<WatchlistDto>> getWatchlist(@PathVariable Long userId) {
+        return ApiResponse.ok(watchlistService.getWatchlist(userId));
+    }
+
+    @PostMapping("/watchlist")
+    public ApiResponse<WatchlistDto> addWatchlist(@RequestBody WatchlistRequestDto request) {
+        return ApiResponse.ok(watchlistService.addWatchlist(
+                request.userId(),
+                request.symbol(),
+                request.watchStartDate()
+        ));
+    }
+
+    @PostMapping("/watchlist/remove")
+    public ApiResponse<Void> removeWatchlistItems(@RequestBody WatchlistRemoveRequestDto request) {
+        watchlistService.removeWatchlistItems(request.userId(), request.symbols());
+        return ApiResponse.ok(null);
+    }
+
+    @DeleteMapping("/{userId}/watchlist/{symbol}")
+    public ApiResponse<Void> removeWatchlist(@PathVariable Long userId,
+                                             @PathVariable String symbol) {
+        watchlistService.removeWatchlist(userId, symbol);
+        return ApiResponse.ok(null);
     }
 }

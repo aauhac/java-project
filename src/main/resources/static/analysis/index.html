@@ -7,7 +7,7 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/css/style.css">
     <script src="/js/layout.js" defer></script>
-    <script src="/js/api.js?v=20260609-2" defer></script>
+    <script src="/js/api.js?v=20260609-watchlist-1" defer></script>
     <script src="/js/format.js" defer></script>
 </head>
 <body>
@@ -42,7 +42,7 @@
         </div>
         <div id="evaluation-summary-cards" class="grid cols-4"></div>
         <div class="card feedback-box" id="trade-feedback-box" style="margin-top: 16px;"></div>
-        <div class="card" id="evaluations-table" style="margin-top: 16px;"></div>
+
     </section>
 
     <section class="section">
@@ -141,7 +141,6 @@
         try {
             const [
                 evalSummaryResponse,
-                evalItemsResponse,
                 tradeFeedbackResponse,
                 opportunitySummaryResponse,
                 missedResponse,
@@ -152,7 +151,6 @@
                 sectorTrendMatchResponse
             ] = await Promise.all([
                 API.getEvaluationSummary(1),
-                API.getTradeEvaluations(1),
                 API.getTradeFeedback(1),
                 API.getOpportunitySummary(1),
                 API.getMissedOpportunities(1),
@@ -165,7 +163,6 @@
 
             renderEvaluationSummary(evalSummaryResponse.data);
             renderTradeFeedback(tradeFeedbackResponse.data);
-            renderEvaluationTable(evalItemsResponse.data || []);
 
             renderOpportunitySummary(opportunitySummaryResponse.data);
             renderOpportunityList('missed-list', missedResponse.data || [], '상승 잠재력을 놓친 사례가 없습니다.');

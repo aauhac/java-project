@@ -66,6 +66,54 @@
             return request(`/api/portfolio/${userId}/trades`);
         },
 
+        getWatchlist(userId = 1) {
+            return request(`/api/portfolio/${userId}/watchlist`);
+        },
+
+        addWatchlist(payload) {
+            return request('/api/portfolio/watchlist', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+        },
+
+        removeWatchlistItems(payload) {
+            return request('/api/portfolio/watchlist/remove', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+        },
+        
+        getWatchlist(userId = 1) {
+            return request(`/api/portfolio/${userId}/watchlist`);
+        },
+
+        addWatchlist(payload) {
+            return request('/api/portfolio/watchlist', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+        },
+
+        removeWatchlistItems(payload) {
+            return request('/api/portfolio/watchlist/remove', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+        },
+
         buyStock(payload) {
             return request('/api/portfolio/buy', {
                 method: 'POST',
