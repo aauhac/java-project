@@ -41,8 +41,15 @@ public class GdeltRawNewsProvider {
     }
 
     public GdeltRawSample fetchMonthlySample(LocalDate baseDate) {
-        LocalDate latestDate = baseDate != null ? baseDate : LocalDate.now().minusDays(1);
+        LocalDate requestedBaseDate = baseDate != null ? baseDate : LocalDate.now();
+        LocalDate latestDate = requestedBaseDate.minusDays(2);
         LocalDate startDate = latestDate.minusDays(DAYS - 1);
+
+        progress.log(
+                "DOWNLOAD",
+                "기준 날짜 " + requestedBaseDate + "에서 2일을 뺀 "
+                        + latestDate + " 18:00 GDELT 파일부터 수집합니다."
+        );
 
         List<Path> csvFiles = new ArrayList<>();
         List<GdeltGkgRecord> records = new ArrayList<>();
