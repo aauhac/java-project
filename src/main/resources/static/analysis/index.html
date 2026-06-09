@@ -7,7 +7,7 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/css/style.css">
     <script src="/js/layout.js" defer></script>
-    <script src="/js/api.js?v=20260609-1" defer></script>
+    <script src="/js/api.js?v=20260609-2" defer></script>
     <script src="/js/format.js" defer></script>
 </head>
 <body>
@@ -195,13 +195,20 @@
         }
 
         try {
-            const response = await API.getLlmStatus();
+            let response;
+
+            if (typeof API.getLlmStatus === 'function') {
+                response = await API.getLlmStatus();
+            } else {
+                response = await API.request('/api/sectors/llm-status');
+            }
+
             const status = response.data || {};
 
-            if (status.connected) {
+            if (status.connected === true) {
                 dot.style.background = '#22c55e';
                 text.textContent = 'LLM 연결 O';
-                detail.textContent = `${status.model || '-'} / ${status.baseUrl || '-'}`;
+                detail.textContent = `${status.model || '-'} / ${status.message || '연결 성공'}`;
             } else {
                 dot.style.background = '#111827';
                 text.textContent = 'LLM 연결 X';
