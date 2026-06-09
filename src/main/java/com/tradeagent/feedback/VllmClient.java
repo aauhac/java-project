@@ -19,6 +19,7 @@ public class VllmClient {
     private static final int MAX_TOKENS = 512;
     private static final double TEMPERATURE = 0.2;
     private static final int TIMEOUT_SECONDS = 120;
+    private static final int STATUS_TIMEOUT_SECONDS = 5;
 
     private final WebClient webClient;
     private final VllmProperties vllmProperties;
@@ -28,6 +29,11 @@ public class VllmClient {
         this.webClient = webClientBuilder
                 .baseUrl(normalizeBaseUrl(vllmProperties.getBaseUrl()))
                 .build();
+
+        log.info("vLLM config loaded. enabled={}, baseUrl={}, model={}",
+                vllmProperties.isEnabled(),
+                normalizeBaseUrl(vllmProperties.getBaseUrl()),
+                vllmProperties.getModel());
     }
 
     public String generateText(String prompt) {
@@ -36,7 +42,7 @@ public class VllmClient {
         }
 
         if (!vllmProperties.isEnabled()) {
-            log.warn("vLLM is disabled. Check VLLM_ENABLED.");
+            log.warn("vLLM is disabled.");
             return FALLBACK_MESSAGE;
         }
 
@@ -76,10 +82,54 @@ public class VllmClient {
             return firstChoice.message().content().trim();
         } catch (Exception ex) {
             log.warn("vLLM request failed. baseUrl={}, model={}, error={}",
-                    vllmProperties.getBaseUrl(),
+                    normalizeBaseUrl(vllmProperties.getBaseUrl()),
                     vllmProperties.getModel(),
                     ex.getMessage());
             return FALLBACK_MESSAGE;
+        }
+    }
+
+    public VllmStatus checkStatus() {
+        if (!vllmProperties.isEnabled()) {
+            return new VllmStatus(
+                    false,
+                    false,
+                    vllmProperties.getModel(),
+                    normalizeBaseUrl(vllmProperties.getBaseUrl()),
+                    "vLLM 비활성화 상태입니다."
+            );
+        }
+
+        try {
+            WebClient.RequestHeadersSpec<?> requestSpec = webClient.get()
+                    .uri("/v1/models");
+
+            if (StringUtils.hasText(vllmProperties.getApiKey())) {
+                requestSpec = requestSpec.header("Authorization", "Bearer " + vllmProperties.getApiKey());
+            }
+
+            String response = requestSpec
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block(Duration.ofSeconds(STATUS_TIMEOUT_SECONDS));
+
+            boolean connected = StringUtils.hasText(response);
+
+            return new VllmStatus(
+                    true,
+                    connected,
+                    vllmProperties.getModel(),
+                    normalizeBaseUrl(vllmProperties.getBaseUrl()),
+                    connected ? "vLLM 연결 성공" : "vLLM 응답이 비어 있습니다."
+            );
+        } catch (Exception ex) {
+            return new VllmStatus(
+                    true,
+                    false,
+                    vllmProperties.getModel(),
+                    normalizeBaseUrl(vllmProperties.getBaseUrl()),
+                    "vLLM 연결 실패: " + ex.getMessage()
+            );
         }
     }
 
@@ -97,6 +147,15 @@ public class VllmClient {
         }
 
         return normalized;
+    }
+
+    public record VllmStatus(
+            boolean enabled,
+            boolean connected,
+            String model,
+            String baseUrl,
+            String message
+    ) {
     }
 }
 

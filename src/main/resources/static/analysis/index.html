@@ -19,6 +19,18 @@
         <p class="page-description">점수 평가, 놓친 기회/피한 위험, 섹터 진단을 하나의 화면으로 통합합니다.</p>
     </section>
 
+    <div id="llm-status-box"
+         class="card"
+         style="margin-bottom:16px; display:flex; align-items:center; justify-content:space-between; gap:12px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+        <span id="llm-status-dot"
+              style="display:inline-block; width:12px; height:12px; border-radius:50%; background:#111827;">
+        </span>
+            <strong id="llm-status-text">LLM 연결 확인 중...</strong>
+        </div>
+        <span id="llm-status-detail" class="muted">-</span>
+    </div>
+
     <div id="page-status"></div>
 
     <section class="section">
@@ -122,6 +134,7 @@
 
         initializeTrendDate();
         bindTrendControls();
+        await loadLlmStatus();
 
         statusHost.innerHTML = Layout.alert('분석 데이터를 불러오는 중입니다.', 'info');
 
@@ -171,6 +184,35 @@
             statusHost.innerHTML = Layout.alert(error.message || '분석 데이터를 불러오지 못했습니다.', 'error');
         }
     });
+
+    async function loadLlmStatus() {
+        const dot = document.getElementById('llm-status-dot');
+        const text = document.getElementById('llm-status-text');
+        const detail = document.getElementById('llm-status-detail');
+
+        if (!dot || !text || !detail) {
+            return;
+        }
+
+        try {
+            const response = await API.getLlmStatus();
+            const status = response.data || {};
+
+            if (status.connected) {
+                dot.style.background = '#22c55e';
+                text.textContent = 'LLM 연결 O';
+                detail.textContent = `${status.model || '-'} / ${status.baseUrl || '-'}`;
+            } else {
+                dot.style.background = '#111827';
+                text.textContent = 'LLM 연결 X';
+                detail.textContent = status.message || '연결 실패';
+            }
+        } catch (error) {
+            dot.style.background = '#111827';
+            text.textContent = 'LLM 연결 X';
+            detail.textContent = error.message || '상태 확인 실패';
+        }
+    }
 
     function renderEvaluationSummary(summary) {
         summary = summary || {};

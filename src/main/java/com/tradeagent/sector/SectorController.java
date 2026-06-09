@@ -15,6 +15,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import com.tradeagent.feedback.VllmClient;
+import com.tradeagent.feedback.VllmClient.VllmStatus;
 
 import java.time.LocalDate;
 import java.util.Comparator;
@@ -27,13 +29,16 @@ public class SectorController {
     private final SectorGkgTrendService sectorGkgTrendService;
     private final PortfolioSectorDiagnosticService portfolioSectorDiagnosticService;
     private final SectorRefreshProgress sectorRefreshProgress;
+    private final VllmClient vllmClient;
 
     public SectorController(SectorGkgTrendService sectorGkgTrendService,
                             PortfolioSectorDiagnosticService portfolioSectorDiagnosticService,
-                            SectorRefreshProgress sectorRefreshProgress) {
+                            SectorRefreshProgress sectorRefreshProgress,
+                            VllmClient vllmClient) {
         this.sectorGkgTrendService = sectorGkgTrendService;
         this.portfolioSectorDiagnosticService = portfolioSectorDiagnosticService;
         this.sectorRefreshProgress = sectorRefreshProgress;
+        this.vllmClient = vllmClient;
     }
 
     @GetMapping("/scores")
@@ -112,6 +117,11 @@ public class SectorController {
         return ApiResponse.ok(sectorRefreshProgress.snapshot());
     }
 
+    @GetMapping("/llm-status")
+    public ApiResponse<VllmStatus> llmStatus() {
+        return ApiResponse.ok(vllmClient.checkStatus());
+    }
+    
     @GetMapping("/trends")
     public ApiResponse<List<SectorTrendDto>> getTrends(@RequestParam(required = false) LocalDate from,
                                                        @RequestParam(required = false) LocalDate to) {

@@ -140,6 +140,10 @@
             return request('/api/sectors/refresh-progress');
         },
 
+        getLlmStatus() {
+            return request('/api/sectors/llm-status');
+        },
+
         analyzeSectorTrendForUser(userId = 1, date) {
             return Promise.all([
                 request(`/api/sectors/trends${buildQuery({from: date, to: date})}`),

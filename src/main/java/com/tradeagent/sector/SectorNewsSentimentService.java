@@ -88,6 +88,12 @@ public class SectorNewsSentimentService {
             );
 
             String response = vllmClient.generateText(prompt);
+
+            progress.log(
+                    "LLM_RAW",
+                    group.sectorCode() + " vLLM 원문 응답: " + preview(response)
+            );
+
             SectorSentimentResult result = parseResponse(group.sectorCode(), response);
 
             progress.log(
@@ -107,20 +113,33 @@ public class SectorNewsSentimentService {
             return fallback(group.sectorCode());
         }
     }
+    private String preview(String value) {
+        if (value == null) {
+            return "null";
+        }
 
+        String compact = value.replace("\n", " ").replace("\r", " ").trim();
+
+        if (compact.length() > 300) {
+            return compact.substring(0, 300) + "...";
+        }
+
+        return compact;
+    }
     private String buildPrompt(SectorRecordGroup group, List<GdeltGkgRecord> topRecords) {
         StringBuilder builder = new StringBuilder();
 
-        builder.append("Return strict JSON only. Do not use markdown. Do not wrap the answer in ```json.\n");
-        builder.append("You are not giving investment advice. Analyze only news sentiment and sector condition.\n");
-        builder.append("The output JSON fields must be:\n");
-        builder.append("{\n");
-        builder.append("  \"sentimentLabel\": \"STRONG|NEUTRAL|WEAK\",\n");
-        builder.append("  \"llmScore\": 0-100,\n");
-        builder.append("  \"reason\": \"short Korean explanation\",\n");
-        builder.append("  \"positiveFactors\": [\"...\"],\n");
-        builder.append("  \"riskFactors\": [\"...\"]\n");
-        builder.append("}\n\n");
+        builder.append("You must answer with exactly one valid JSON object.\n");
+        builder.append("Do not include markdown.\n");
+        builder.append("Do not include explanations outside JSON.\n");
+        builder.append("Do not include <think> tags.\n");
+        builder.append("Do not copy the schema. Fill the schema with your own analysis.\n");
+        builder.append("The JSON object must use exactly these keys:\n");
+        builder.append("sentimentLabel, llmScore, reason, positiveFactors, riskFactors\n");
+        builder.append("llmScore must be a number from 0 to 100.\n");
+        builder.append("sentimentLabel must be one of STRONG, NEUTRAL, WEAK.\n");
+        builder.append("Return example format:\n");
+        builder.append("{\"sentimentLabel\":\"NEUTRAL\",\"llmScore\":50,\"reason\":\"...\",\"positiveFactors\":[],\"riskFactors\":[]}\n\n");
 
         builder.append("sectorCode: ").append(group.sectorCode()).append('\n');
         builder.append("sectorName: ").append(SectorConstants.nameOf(group.sectorCode())).append('\n');
@@ -182,6 +201,10 @@ public class SectorNewsSentimentService {
                     riskFactors
             );
         } catch (Exception ex) {
+            progress.log(
+                    "LLM_PARSE_WARN",
+                    sectorCode + " vLLM 응답 JSON 파싱 실패 → 중립 점수 사용 / " + ex.getMessage()
+            );
             return fallback(sectorCode);
         }
     }
