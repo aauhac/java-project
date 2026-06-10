@@ -64,6 +64,8 @@ public final class PortfolioApiModels {
     public record WatchlistDto(
             String symbol,
             LocalDate watchStartDate,
+            BigDecimal basePrice,
+            BigDecimal currentPrice,
             BigDecimal changeRate
     ) {
     }

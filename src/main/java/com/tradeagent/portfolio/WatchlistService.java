@@ -6,7 +6,6 @@ import com.tradeagent.common.ValidationException;
 import com.tradeagent.market.LatestQuote;
 import com.tradeagent.market.MarketDataService;
 import com.tradeagent.market.PriceBar;
-import com.tradeagent.market.PriceBarRepository;
 import com.tradeagent.portfolio.PortfolioApiModels.WatchlistDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,7 +14,6 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.Comparator;
 import java.util.List;
 
@@ -23,18 +21,13 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class WatchlistService {
 
-    private static final int BASE_PRICE_LOOKAHEAD_DAYS = 7;
-
     private final WatchlistRepository watchlistRepository;
     private final MarketDataService marketDataService;
-    private final PriceBarRepository priceBarRepository;
 
     public WatchlistService(WatchlistRepository watchlistRepository,
-                            MarketDataService marketDataService,
-                            PriceBarRepository priceBarRepository) {
+                            MarketDataService marketDataService) {
         this.watchlistRepository = watchlistRepository;
         this.marketDataService = marketDataService;
-        this.priceBarRepository = priceBarRepository;
     }
 
     @Transactional
@@ -100,12 +93,14 @@ public class WatchlistService {
 
     private WatchlistDto toDto(WatchlistItem item) {
         LocalDate baseDate = resolveBaseDate(item);
-        BigDecimal changeRate = calculateChangeRate(item.getSymbol(), baseDate);
+        WatchlistPriceSnapshot snapshot = calculatePriceSnapshot(item.getSymbol(), baseDate);
 
         return new WatchlistDto(
                 item.getSymbol(),
                 baseDate,
-                changeRate
+                snapshot.basePrice(),
+                snapshot.currentPrice(),
+                snapshot.changeRate()
         );
     }
 
@@ -121,38 +116,51 @@ public class WatchlistService {
         return LocalDate.now();
     }
 
-    private BigDecimal calculateChangeRate(String symbol, LocalDate baseDate) {
+    private WatchlistPriceSnapshot calculatePriceSnapshot(String symbol, LocalDate baseDate) {
         LatestQuote latestQuote = marketDataService.getLatestQuote(symbol);
-        BigDecimal currentPrice = latestQuote.getLastPrice();
+        BigDecimal currentPrice = scalePrice(latestQuote.getLastPrice());
+        BigDecimal basePrice = scalePrice(findBaseClosePrice(symbol, baseDate));
 
-        BigDecimal baseClosePrice = findBaseClosePrice(symbol, baseDate);
+        BigDecimal changeRate = calculateChangeRate(basePrice, currentPrice);
 
+        return new WatchlistPriceSnapshot(basePrice, currentPrice, changeRate);
+    }
+
+    private BigDecimal calculateChangeRate(BigDecimal basePrice, BigDecimal currentPrice) {
         if (currentPrice == null
-                || baseClosePrice == null
-                || baseClosePrice.compareTo(BigDecimal.ZERO) <= 0) {
+                || basePrice == null
+                || basePrice.compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         }
 
-        return currentPrice.subtract(baseClosePrice)
-                .divide(baseClosePrice, 6, RoundingMode.HALF_UP)
+        return currentPrice.subtract(basePrice)
+                .divide(basePrice, 6, RoundingMode.HALF_UP)
                 .multiply(BigDecimal.valueOf(100))
                 .setScale(2, RoundingMode.HALF_UP);
     }
 
     private BigDecimal findBaseClosePrice(String symbol, LocalDate baseDate) {
-        LocalDate endDate = baseDate.plusDays(BASE_PRICE_LOOKAHEAD_DAYS);
+        LocalDate today = LocalDate.now();
+        LocalDate endDate = baseDate.isAfter(today) ? baseDate : today;
 
-        return priceBarRepository.findBySymbolAndBarTimeBetween(
-                        symbol,
-                        baseDate.atStartOfDay(),
-                        endDate.atTime(LocalTime.MAX)
-                )
-                .stream()
+        List<PriceBar> bars = marketDataService.getHistoricalBars(symbol, baseDate, endDate);
+
+        return bars.stream()
+                .filter(bar -> bar.getBarTime() != null)
+                .filter(bar -> !bar.getBarTime().toLocalDate().isBefore(baseDate))
                 .sorted(Comparator.comparing(PriceBar::getBarTime))
                 .map(PriceBar::getClosePrice)
                 .filter(price -> price != null && price.compareTo(BigDecimal.ZERO) > 0)
                 .findFirst()
                 .orElse(null);
+    }
+
+    private BigDecimal scalePrice(BigDecimal value) {
+        if (value == null) {
+            return null;
+        }
+
+        return value.setScale(4, RoundingMode.HALF_UP);
     }
 
     private void validateUserId(Long userId) {
@@ -167,5 +175,12 @@ public class WatchlistService {
         }
 
         return symbol.trim().toUpperCase();
+    }
+
+    private record WatchlistPriceSnapshot(
+            BigDecimal basePrice,
+            BigDecimal currentPrice,
+            BigDecimal changeRate
+    ) {
     }
 }

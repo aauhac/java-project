@@ -7,7 +7,7 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/css/style.css">
     <script src="/js/layout.js" defer></script>
-    <script src="/js/api.js?v=20260609-watchlist-3" defer></script>
+    <script src="/js/api.js?v=20260609-watchlist-live-1" defer></script>
     <script src="/js/format.js" defer></script>
     <script src="/js/charts.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
@@ -124,7 +124,7 @@
         <div class="section-header">
             <div>
                 <h2 class="section-title">Watchlist</h2>
-                <p class="section-subtitle">차트 조회 후 관심종목으로 추가한 종목을 확인합니다. 기준일은 차트의 End 날짜로 저장됩니다.</p>
+                <p class="section-subtitle">차트 End 날짜를 바꾸면 현재 선택 종목의 Watchlist 기준일과 변동률이 자동 갱신됩니다.</p>
             </div>
             <button class="button secondary" id="remove-watchlist-button" type="button">관심 종목 제거</button>
         </div>
@@ -219,6 +219,7 @@
         document.getElementById('load-chart-button').addEventListener('click', async () => {
             readChartFormValues();
             await loadChart();
+            await updateSelectedWatchlistDateFromChart(false);
         });
 
         document.getElementById('add-watchlist-button').addEventListener('click', async () => {
@@ -234,6 +235,28 @@
             event.preventDefault();
             readChartFormValues();
             await loadChart();
+            await updateSelectedWatchlistDateFromChart(false);
+        });
+
+        document.getElementById('symbol').addEventListener('change', async () => {
+            readChartFormValues();
+            await loadChart();
+        });
+
+        document.getElementById('timeframe').addEventListener('change', async () => {
+            readChartFormValues();
+            await loadChart();
+        });
+
+        document.getElementById('start').addEventListener('change', async () => {
+            readChartFormValues();
+            await loadChart();
+        });
+
+        document.getElementById('end').addEventListener('change', async () => {
+            readChartFormValues();
+            await loadChart();
+            await updateSelectedWatchlistDateFromChart(true);
         });
 
         document.getElementById('buy-form').addEventListener('submit', async (event) => {
@@ -461,6 +484,8 @@
                         <th>선택</th>
                         <th>종목 코드</th>
                         <th>기준일</th>
+                        <th>기준일 가격</th>
+                        <th>현재가</th>
                         <th>기준일 이후 변동률</th>
                         <th>차트</th>
                     </tr>
@@ -480,6 +505,8 @@
                                 title="더블클릭하여 기준일 수정">
                                 ${Layout.escapeHtml(item.watchStartDate || '-')}
                             </td>
+                            <td>${item.basePrice == null ? '-' : Format.currency(item.basePrice)}</td>
+                            <td>${item.currentPrice == null ? '-' : Format.currency(item.currentPrice)}</td>
                             <td class="${Format.percentClass(item.changeRate)}">${Format.percent(item.changeRate)}</td>
                             <td>
                                 <button class="button secondary watchlist-chart-select"
@@ -564,6 +591,46 @@
             await refreshPortfolioPanels();
         } catch (error) {
             statusHost.innerHTML = Layout.alert(error.message || 'Watchlist 추가에 실패했습니다.', 'error');
+        }
+    }
+
+    async function updateSelectedWatchlistDateFromChart(showMessage) {
+        const statusHost = document.getElementById('page-status');
+        const symbol = String(state.selectedSymbol || '').trim().toUpperCase();
+        const watchStartDate = state.selectedEnd;
+
+        if (!symbol || !watchStartDate) {
+            return;
+        }
+
+        try {
+            const watchlistResponse = await API.getWatchlist(1);
+            const watchlist = watchlistResponse.data || [];
+            const exists = watchlist.some(item => String(item.symbol || '').toUpperCase() === symbol);
+
+            if (!exists) {
+                return;
+            }
+
+            await API.addWatchlist({
+                userId: 1,
+                symbol,
+                watchStartDate
+            });
+
+            await refreshPortfolioPanels();
+
+            if (showMessage) {
+                statusHost.innerHTML = Layout.alert(
+                    `차트 End 날짜 기준으로 Watchlist 기준일을 갱신했습니다: ${symbol} / ${watchStartDate}`,
+                    'success'
+                );
+            }
+        } catch (error) {
+            statusHost.innerHTML = Layout.alert(
+                error.message || '차트 기준일로 Watchlist를 갱신하지 못했습니다.',
+                'error'
+            );
         }
     }
 
