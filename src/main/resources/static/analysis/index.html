@@ -9,6 +9,7 @@
     <script src="/js/layout.js" defer></script>
     <script src="/js/api.js?v=20260609-analysis-2" defer></script>
     <script src="/js/format.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <div id="app-nav"></div>
@@ -65,7 +66,6 @@
             </div>
         </div>
 
-        <div class="card" id="patterns-table" style="margin-top: 16px;"></div>
         <div class="card feedback-box" id="opportunity-feedback-box" style="margin-top: 16px;"></div>
     </section>
 
@@ -115,7 +115,14 @@
 
         <div id="sector-scoreboard" class="grid cols-4"></div>
         <div id="diagnostic-cards" class="grid cols-2" style="margin-top: 16px;"></div>
-        <div class="card" id="exposure-table" style="margin-top: 16px;"></div>
+        <div class="card" id="exposure-table" style="margin-top: 16px;">
+            <div class="doughnut-wrap">
+                <div class="doughnut-canvas">
+                    <canvas id="exposure-doughnut"></canvas>
+                </div>
+                <div id="exposure-list"></div>
+            </div>
+        </div>
     </section>
 </main>
 
@@ -124,8 +131,9 @@
         selectedDate: '',
         isRefreshing: false,
         progressTimer: null
-    };
 
+    };
+    let exposureDoughnut;
     window.addEventListener('DOMContentLoaded', async () => {
         Layout.mountNavigation('analysis');
 
@@ -133,6 +141,7 @@
 
         initializeTrendDate();
         bindTrendControls();
+        initializeExposureChart();
         await loadLlmStatus();
 
         statusHost.innerHTML = Layout.alert('분석 데이터를 불러오는 중입니다.', 'info');
@@ -166,7 +175,6 @@
             renderOpportunitySummary(opportunitySummaryResponse.data);
             renderOpportunityList('missed-list', missedResponse.data || [], '상승 잠재력을 놓친 사례가 없습니다.');
             renderOpportunityList('avoided-list', avoidedResponse.data || [], '회피한 위험 사례가 없습니다.');
-            renderPatterns(patternsResponse.data || []);
             renderOpportunityFeedback(opportunityFeedbackResponse.data);
 
             renderScores(sectorScoresResponse.data || []);
@@ -228,12 +236,12 @@
         ];
 
         document.getElementById('evaluation-summary-cards').innerHTML = cards.map(([label, value, hint]) => `
-            <article class="card stat-card">
-                <div class="stat-card__label">${label}</div>
-                <div class="stat-card__value">${value}</div>
-                <div class="stat-card__hint">${Layout.escapeHtml(hint)}</div>
-            </article>
-        `).join('');
+        <article class="card stat-card">
+            <div class="stat-card__label">${label}</div>
+            <div class="stat-card__value">${value}</div>
+            <div class="stat-card__hint">${Layout.escapeHtml(hint)}</div>
+        </article>
+    `).join('');
     }
 
     function renderTradeFeedback(feedback) {
@@ -251,19 +259,17 @@
         summary = summary || {};
 
         const cards = [
-            ['놓친 기회 수', Format.integer(summary.missedCount), 'Watchlist 이후 상승한 종목'],
-            ['피한 위험 수', Format.integer(summary.avoidedCount), '매수하지 않아 피한 하락'],
-            ['너무 빨리 판 거래', Format.integer(summary.soldTooEarlyCount), '매도 후 더 오른 거래'],
-            ['오래 보유한 거래', Format.integer(summary.heldTooLongCount), '큰 손실 후 정리된 거래']
+            ['놓친 기회 수', Format.integer(summary.missedCount), 'Watchlist 이후 종가 기준 상승한 종목'],
+            ['피한 위험 수', Format.integer(summary.avoidedCount), 'Watchlist 이후 종가 기준 하락한 종목']
         ];
 
         document.getElementById('opportunity-summary-cards').innerHTML = cards.map(([label, value, hint]) => `
-            <article class="card stat-card">
-                <div class="stat-card__label">${label}</div>
-                <div class="stat-card__value">${value}</div>
-                <div class="stat-card__hint">${Layout.escapeHtml(hint)}</div>
-            </article>
-        `).join('');
+        <article class="card stat-card">
+            <div class="stat-card__label">${label}</div>
+            <div class="stat-card__value">${value}</div>
+            <div class="stat-card__hint">${Layout.escapeHtml(hint)}</div>
+        </article>
+    `).join('');
     }
 
     function renderOpportunityList(hostId, items, emptyMessage) {
@@ -276,25 +282,25 @@
         }
 
         host.innerHTML = topItems.map(item => `
-            <article class="card" style="margin-top: 12px;">
-                <div class="section-header" style="margin-bottom: 10px;">
-                    <div>
-                        <h3 style="margin:0;">${Layout.escapeHtml(item.symbol)}</h3>
-                        <p class="section-subtitle">
-                            ${Layout.escapeHtml(item.grade || '-')} / ${Format.dateTime(item.detectedAt)}
-                        </p>
-                    </div>
-                    <div class="${Format.percentClass(item.changeRate)}">
-                        <strong>${Format.percent(item.changeRate)}</strong>
-                    </div>
+        <article class="card" style="margin-top: 12px;">
+            <div class="section-header" style="margin-bottom: 10px;">
+                <div>
+                    <h3 style="margin:0;">${Layout.escapeHtml(item.symbol)}</h3>
+                    <p class="section-subtitle">
+                        ${Layout.escapeHtml(item.grade || '-')} / ${Format.dateTime(item.detectedAt)}
+                    </p>
                 </div>
-                <div class="muted">${Layout.escapeHtml(item.reason || '-')}</div>
-                <div style="margin-top:10px;">${Layout.escapeHtml(item.feedback || '-')}</div>
-                <div class="muted" style="margin-top:10px;">
-                    기회 점수: ${Format.score(item.opportunityScore)} / 관찰 기간: ${Format.integer(item.watchDays)}일
+                <div class="${Format.percentClass(item.changeRate)}">
+                    <strong>${Format.percent(item.changeRate)}</strong>
                 </div>
-            </article>
-        `).join('');
+            </div>
+            <div class="muted">${Layout.escapeHtml(item.reason || '-')}</div>
+            <div style="margin-top:10px;">${Layout.escapeHtml(item.feedback || '-')}</div>
+            <div class="muted" style="margin-top:10px;">
+                기회 점수: ${Format.score(item.opportunityScore)} / 관찰 기간: ${Format.integer(item.watchDays)}일
+            </div>
+        </article>
+    `).join('');
     }
 
     function renderPatterns(items) {
@@ -405,38 +411,96 @@
         `;
     }
 
-    function renderExposure(items) {
-        const host = document.getElementById('exposure-table');
+    function initializeExposureChart() {
+        const canvas = document.getElementById('exposure-doughnut');
 
-        if (!items.length) {
-            host.innerHTML = Layout.empty('포트폴리오 섹터 노출 데이터가 없습니다.');
+        if (!canvas || typeof Chart === 'undefined') {
             return;
         }
 
-        host.innerHTML = `
-            <div class="table-wrap">
-                <table class="data-table">
-                    <thead>
-                    <tr>
-                        <th>섹터</th>
-                        <th>보유 비중</th>
-                        <th>섹터 점수</th>
-                        <th>상태</th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                    ${items.map(item => `
-                        <tr>
-                            <td><strong>${Layout.escapeHtml(item.sectorName)}</strong> (${Layout.escapeHtml(item.sectorCode)})</td>
-                            <td>${Format.percent(item.portfolioRate)}</td>
-                            <td>${Format.score(item.sectorScore)}</td>
-                            <td>${Layout.statusPill(item.status)}</td>
-                        </tr>
-                    `).join('')}
-                    </tbody>
-                </table>
-            </div>
-        `;
+        exposureDoughnut = new Chart(canvas, {
+            type: 'doughnut',
+            data: {
+                labels: [],
+                datasets: [{
+                    data: [],
+                    backgroundColor: [],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    }
+                }
+            }
+        });
+    }
+
+    function renderExposure(items) {
+        const listHost = document.getElementById('exposure-list');
+
+        if (!items.length) {
+            listHost.innerHTML = Layout.empty('포트폴리오 섹터 노출 데이터가 없습니다.');
+            updateExposureChart([]);
+            return;
+        }
+
+        updateExposureChart(items);
+
+        listHost.innerHTML = `
+        <div class="bar-list">
+            ${items.map(item => {
+            const color = statusColor(item.status);
+            return `
+                    <div class="bar-row">
+                        <div class="bar-row__meta">
+                            <span>
+                                <strong>${Layout.escapeHtml(item.sectorName)}</strong>
+                                (${Layout.escapeHtml(item.sectorCode)})
+                            </span>
+                            <span style="color:${color}; font-weight:700;">
+                                ${Layout.escapeHtml(item.status || 'NEUTRAL')}
+                                / ${Format.score(item.sectorScore)}
+                                / ${Format.percent(item.portfolioRate)}
+                            </span>
+                        </div>
+                        <div class="bar-track">
+                            <div class="bar-fill"
+                                 style="width:${Math.min(Number(item.portfolioRate) || 0, 100)}%; background:${color};">
+                            </div>
+                        </div>
+                    </div>
+                `;
+        }).join('')}
+        </div>
+    `;
+    }
+
+    function updateExposureChart(items) {
+        if (!exposureDoughnut) {
+            return;
+        }
+
+        exposureDoughnut.data.labels = items.map(item => `${item.sectorName} (${item.sectorCode})`);
+        exposureDoughnut.data.datasets[0].data = items.map(item => Number(item.portfolioRate) || 0);
+        exposureDoughnut.data.datasets[0].backgroundColor = items.map(item => statusColor(item.status));
+        exposureDoughnut.update();
+    }
+
+    function statusColor(status) {
+        if (status === 'STRONG') {
+            return '#22c55e';
+        }
+
+        if (status === 'WEAK') {
+            return '#ef4444';
+        }
+
+        return '#94a3b8';
     }
 
     function initializeTrendDate() {

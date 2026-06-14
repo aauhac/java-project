@@ -26,14 +26,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)
 public class TradeEvaluationService {
 
     private static final int ENTRY_LOOKAHEAD_DAYS = 10;
-    private static final int ENTRY_BAR_LIMIT = 5;
-    private static final int EXIT_WINDOW_DAYS = 5;
+    private static final int ENTRY_BAR_LIMIT = 8;
+    private static final int EXIT_WINDOW_DAYS = 7;
 
     private final TradeHistoryRepository tradeHistoryRepository;
     private final PortfolioRepository portfolioRepository;
@@ -70,6 +71,8 @@ public class TradeEvaluationService {
 
     @Transactional
     public List<TradeEvaluationDto> evaluateAllTrades(Long userId) {
+        validateUserId(userId);
+
         synchronized (evaluationLock) {
             return tradeHistoryRepository.findByUserId(userId).stream()
                     .sorted(Comparator.comparing(TradeHistory::getTradedAt))
@@ -78,28 +81,33 @@ public class TradeEvaluationService {
         }
     }
 
-    @Transactional
+    /*
+     * 중요:
+     * 요약 조회에서는 DB에 update/save를 하지 않는다.
+     * 화면에서 점수를 보여줄 때마다 trade_evaluations를 갱신하면 H2 lock timeout이 발생한다.
+     * 따라서 요약은 현재 거래 이력과 가격 데이터로 메모리상 계산만 수행한다.
+     */
     public DecisionSummaryDto getDecisionSummary(Long userId) {
-        synchronized (evaluationLock) {
-            List<TradeEvaluationDto> evaluations = tradeHistoryRepository.findByUserId(userId).stream()
-                    .sorted(Comparator.comparing(TradeHistory::getTradedAt))
-                    .map(this::evaluateTradeInternal)
-                    .toList();
+        validateUserId(userId);
 
-            if (evaluations.isEmpty()) {
-                return new DecisionSummaryDto(
-                        zeroScore(),
-                        zeroScore(),
-                        zeroScore(),
-                        zeroScore(),
-                        zeroScore(),
-                        zeroScore(),
-                        "평가할 거래가 없습니다."
-                );
-            }
+        List<TradeEvaluationDto> evaluations = tradeHistoryRepository.findByUserId(userId).stream()
+                .sorted(Comparator.comparing(TradeHistory::getTradedAt))
+                .map(this::evaluateTradeInMemory)
+                .toList();
 
-            return buildSummary(evaluations);
+        if (evaluations.isEmpty()) {
+            return new DecisionSummaryDto(
+                    zeroScore(),
+                    zeroScore(),
+                    zeroScore(),
+                    zeroScore(),
+                    zeroScore(),
+                    zeroScore(),
+                    "평가할 거래가 없습니다."
+            );
         }
+
+        return buildSummary(evaluations);
     }
 
     private DecisionSummaryDto buildSummary(List<TradeEvaluationDto> evaluations) {
@@ -108,7 +116,12 @@ public class TradeEvaluationService {
         BigDecimal averageRisk = averageOf(evaluations, TradeEvaluationDto::riskScore);
         BigDecimal averageDiversification = averageOf(evaluations, TradeEvaluationDto::diversificationScore);
         BigDecimal averageSectorFit = averageOf(evaluations, TradeEvaluationDto::sectorFitScore);
-        BigDecimal averageTotal = averageOf(evaluations, TradeEvaluationDto::totalScore);
+
+        /*
+         * 종합 판단은 실제 매매 판단 품질인 Entry / Exit / Risk 중심으로 계산한다.
+         * 분산 투자와 섹터 적합성은 참고값으로만 유지한다.
+         */
+        BigDecimal averageTotal = calculateCoreAverageTotal(averageEntry, averageExit, averageRisk);
 
         return new DecisionSummaryDto(
                 averageEntry,
@@ -127,11 +140,61 @@ public class TradeEvaluationService {
         );
     }
 
+    private BigDecimal calculateCoreAverageTotal(BigDecimal entry, BigDecimal exit, BigDecimal risk) {
+        BigDecimal safeEntry = scale(entry);
+        BigDecimal safeExit = scale(exit);
+        BigDecimal safeRisk = scale(risk);
+
+        return safeEntry.multiply(BigDecimal.valueOf(0.35))
+                .add(safeExit.multiply(BigDecimal.valueOf(0.30)))
+                .add(safeRisk.multiply(BigDecimal.valueOf(0.35)))
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
     private BigDecimal averageOf(
             List<TradeEvaluationDto> evaluations,
             Function<TradeEvaluationDto, BigDecimal> extractor
     ) {
         return average(evaluations.stream().map(extractor).toList());
+    }
+
+    private TradeEvaluationDto evaluateTradeInMemory(TradeHistory tradeHistory) {
+        EvaluationScores scores = calculateScores(tradeHistory);
+
+        BigDecimal entryScore = toScore(scores.entry());
+        BigDecimal exitScore = toScore(scores.exit());
+        BigDecimal riskScore = toScore(scores.risk());
+        BigDecimal diversificationScore = toScore(scores.diversification());
+        BigDecimal sectorFitScore = toScore(scores.sectorFit());
+        BigDecimal totalScore = toScore(scores.total());
+
+        String feedback = decisionFeedbackBuilder.buildFeedback(
+                entryScore,
+                exitScore,
+                riskScore,
+                diversificationScore,
+                sectorFitScore
+        );
+
+        return new TradeEvaluationDto(
+                tradeHistory.getId(),
+                entryScore,
+                exitScore,
+                riskScore,
+                diversificationScore,
+                sectorFitScore,
+                totalScore,
+                feedback,
+                DateTimeUtil.nowUtc(),
+                decisionFeedbackBuilder.buildScoreDetails(
+                        entryScore,
+                        exitScore,
+                        riskScore,
+                        diversificationScore,
+                        sectorFitScore,
+                        totalScore
+                )
+        );
     }
 
     private TradeEvaluationDto evaluateTradeInternal(TradeHistory tradeHistory) {
@@ -142,6 +205,7 @@ public class TradeEvaluationService {
 
     private EvaluationScores calculateScores(TradeHistory tradeHistory) {
         TradePairContext tradePairContext = resolveTradePair(tradeHistory);
+
         List<PortfolioPosition> positions = portfolioRepository.findByUserId(tradeHistory.getUserId());
         List<PriceBar> barsAfterEntry = loadBarsAfterEntry(tradePairContext.buyTrade());
         List<PriceBar> barsAroundExit = loadBarsAroundExit(tradePairContext.sellTrade());
@@ -152,7 +216,7 @@ public class TradeEvaluationService {
         double riskScore = calculateRiskScore(tradePairContext.buyTrade(), holdingBars);
         double diversificationScore = calculateDiversificationScore(positions);
         double sectorFitScore = calculateSectorFitScore(tradeHistory.getSectorCode());
-        double totalScore = calculateTotalScore(entryScore, exitScore, riskScore, diversificationScore, sectorFitScore);
+        double totalScore = calculateTotalScore(entryScore, exitScore, riskScore);
 
         return new EvaluationScores(entryScore, exitScore, riskScore, diversificationScore, sectorFitScore, totalScore);
     }
@@ -192,6 +256,7 @@ public class TradeEvaluationService {
                 toScore(scores.total()),
                 DateTimeUtil.nowUtc()
         );
+
         return tradeEvaluationRepository.save(evaluation);
     }
 
@@ -231,10 +296,12 @@ public class TradeEvaluationService {
         }
 
         LocalDate tradeDate = buyTrade.getTradedAt().toLocalDate();
+
         return priceBarRepository.findBySymbolAndBarTimeBetween(
                         buyTrade.getSymbol(),
                         tradeDate.atStartOfDay(),
-                        tradeDate.plusDays(ENTRY_LOOKAHEAD_DAYS).atTime(LocalTime.MAX))
+                        tradeDate.plusDays(ENTRY_LOOKAHEAD_DAYS).atTime(LocalTime.MAX)
+                )
                 .stream()
                 .sorted(Comparator.comparing(PriceBar::getBarTime))
                 .limit(ENTRY_BAR_LIMIT)
@@ -247,10 +314,12 @@ public class TradeEvaluationService {
         }
 
         LocalDate tradeDate = sellTrade.getTradedAt().toLocalDate();
+
         return priceBarRepository.findBySymbolAndBarTimeBetween(
                         sellTrade.getSymbol(),
                         tradeDate.minusDays(EXIT_WINDOW_DAYS).atStartOfDay(),
-                        tradeDate.plusDays(EXIT_WINDOW_DAYS).atTime(LocalTime.MAX))
+                        tradeDate.plusDays(EXIT_WINDOW_DAYS).atTime(LocalTime.MAX)
+                )
                 .stream()
                 .sorted(Comparator.comparing(PriceBar::getBarTime))
                 .toList();
@@ -273,7 +342,8 @@ public class TradeEvaluationService {
         return priceBarRepository.findBySymbolAndBarTimeBetween(
                         buyTrade.getSymbol(),
                         startDate.atStartOfDay(),
-                        endDate.atTime(LocalTime.MAX))
+                        endDate.atTime(LocalTime.MAX)
+                )
                 .stream()
                 .sorted(Comparator.comparing(PriceBar::getBarTime))
                 .toList();
@@ -308,42 +378,41 @@ public class TradeEvaluationService {
         return new TradePairContext(buyTrade, sellTrade);
     }
 
-    private BigDecimal average(List<BigDecimal> scores) {
-        if (scores.isEmpty()) {
-            return zeroScore();
-        }
-
-        BigDecimal total = scores.stream()
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        return total.divide(BigDecimal.valueOf(scores.size()), 2, RoundingMode.HALF_UP);
-    }
-
-    private BigDecimal zeroScore() {
-        return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-    }
-
-    private double neutralScore() {
-        return 50.0;
-    }
-
-    private BigDecimal toScore(double value) {
-        return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP);
-    }
-
     private double calculateEntryScore(TradeHistory buyTrade, List<PriceBar> barsAfterEntry) {
         if (buyTrade == null || barsAfterEntry.isEmpty() || buyTrade.getPrice() == null) {
             return neutralScore();
         }
 
         BigDecimal entryPrice = buyTrade.getPrice();
-        BigDecimal bestPrice = barsAfterEntry.stream()
+
+        BigDecimal maxHigh = barsAfterEntry.stream()
                 .map(PriceBar::getHighPrice)
                 .filter(price -> price != null)
                 .max(Comparator.naturalOrder())
                 .orElse(entryPrice);
 
-        double bestGainPct = percentChange(entryPrice, bestPrice);
-        return clampScore(50.0 + bestGainPct * 3.0);
+        BigDecimal minLow = barsAfterEntry.stream()
+                .map(PriceBar::getLowPrice)
+                .filter(price -> price != null)
+                .min(Comparator.naturalOrder())
+                .orElse(entryPrice);
+
+        BigDecimal lastClose = barsAfterEntry.stream()
+                .map(PriceBar::getClosePrice)
+                .filter(price -> price != null)
+                .reduce((first, second) -> second)
+                .orElse(entryPrice);
+
+        double upsidePct = Math.max(0.0, percentChange(entryPrice, maxHigh));
+        double closePct = percentChange(entryPrice, lastClose);
+        double adversePct = Math.max(0.0, -percentChange(entryPrice, minLow));
+
+        /*
+         * 매수 후 실제 종가 흐름이 좋으면 가점,
+         * 잠재 상승 여력이 있었으면 약한 가점,
+         * 매수 직후 큰 하락을 맞았으면 감점.
+         */
+        return clampScore(52.0 + closePct * 2.0 + upsidePct * 0.8 - adversePct * 1.4);
     }
 
     private double calculateExitScore(TradeHistory sellTrade, List<PriceBar> barsAroundExit) {
@@ -352,6 +421,7 @@ public class TradeEvaluationService {
         }
 
         BigDecimal sellPrice = sellTrade.getPrice();
+
         List<PriceBar> afterBars = barsAroundExit.stream()
                 .filter(bar -> bar.getBarTime() != null && bar.getBarTime().isAfter(sellTrade.getTradedAt()))
                 .toList();
@@ -372,45 +442,57 @@ public class TradeEvaluationService {
                 .min(Comparator.naturalOrder())
                 .orElse(sellPrice);
 
-        double missedUpsidePct = percentChange(sellPrice, maxAfter);
-        double avoidedDropPct = -percentChange(sellPrice, minAfter);
+        BigDecimal lastClose = afterBars.stream()
+                .map(PriceBar::getClosePrice)
+                .filter(price -> price != null)
+                .reduce((first, second) -> second)
+                .orElse(sellPrice);
 
-        return clampScore(50.0 - missedUpsidePct * 2.0 + avoidedDropPct * 1.5);
+        double missedUpsidePct = Math.max(0.0, percentChange(sellPrice, maxAfter));
+        double avoidedDropPct = Math.max(0.0, -percentChange(sellPrice, minAfter));
+        double postClosePct = percentChange(sellPrice, lastClose);
+
+        /*
+         * 매도 후 종가가 더 올랐으면 감점,
+         * 매도 후 하락을 피했으면 가점.
+         */
+        return clampScore(55.0 - missedUpsidePct * 1.4 - Math.max(0.0, postClosePct) * 1.2 + avoidedDropPct * 1.6);
     }
 
     private double calculateRiskScore(TradeHistory buyTrade, List<PriceBar> holdingBars) {
-        if (buyTrade == null || holdingBars.isEmpty()) {
+        if (buyTrade == null || holdingBars.isEmpty() || buyTrade.getPrice() == null) {
             return neutralScore();
         }
 
-        BigDecimal peak = null;
+        BigDecimal entryPrice = buyTrade.getPrice();
+        BigDecimal peak = entryPrice;
         double maxDrawdownPct = 0.0;
+        double finalReturnPct = 0.0;
 
         for (PriceBar bar : holdingBars) {
             BigDecimal high = bar.getHighPrice();
             BigDecimal low = bar.getLowPrice();
+            BigDecimal close = bar.getClosePrice();
 
-            if (high == null || low == null) {
-                continue;
-            }
-
-            if (peak == null || high.compareTo(peak) > 0) {
+            if (high != null && high.compareTo(peak) > 0) {
                 peak = high;
             }
 
-            if (peak != null && peak.compareTo(BigDecimal.ZERO) > 0) {
+            if (peak != null && low != null && peak.compareTo(BigDecimal.ZERO) > 0) {
                 double drawdownPct = peak.subtract(low)
                         .divide(peak, 6, RoundingMode.HALF_UP)
                         .multiply(BigDecimal.valueOf(100))
                         .doubleValue();
 
-                if (drawdownPct > maxDrawdownPct) {
-                    maxDrawdownPct = drawdownPct;
-                }
+                maxDrawdownPct = Math.max(maxDrawdownPct, drawdownPct);
+            }
+
+            if (close != null) {
+                finalReturnPct = percentChange(entryPrice, close);
             }
         }
 
-        return clampScore(100.0 - maxDrawdownPct * 2.0);
+        return clampScore(70.0 + finalReturnPct * 0.5 - maxDrawdownPct * 2.0);
     }
 
     private double calculateDiversificationScore(List<PortfolioPosition> positions) {
@@ -429,13 +511,13 @@ public class TradeEvaluationService {
         Set<String> uniqueSectors = positions.stream()
                 .map(PortfolioPosition::getSectorCode)
                 .filter(code -> code != null && !code.isBlank())
-                .collect(java.util.stream.Collectors.toSet());
+                .collect(Collectors.toSet());
 
         Map<String, BigDecimal> sectorWeights = positions.stream()
                 .filter(position -> position.getSectorCode() != null)
-                .collect(java.util.stream.Collectors.groupingBy(
+                .collect(Collectors.groupingBy(
                         PortfolioPosition::getSectorCode,
-                        java.util.stream.Collectors.reducing(
+                        Collectors.reducing(
                                 BigDecimal.ZERO,
                                 PortfolioPosition::getTotalBuyAmount,
                                 BigDecimal::add
@@ -449,33 +531,33 @@ public class TradeEvaluationService {
                 .max(Double::compareTo)
                 .orElse(100.0);
 
-        double sectorBonus = Math.min(uniqueSectors.size() * 12.0, 40.0);
-        double concentrationPenalty = Math.max(0.0, (maxWeightPct - 40.0) * 0.8);
+        double sectorBonus = Math.min(uniqueSectors.size() * 10.0, 35.0);
+        double concentrationPenalty = Math.max(0.0, (maxWeightPct - 45.0) * 0.7);
 
-        return clampScore(50.0 + sectorBonus - concentrationPenalty);
+        return clampScore(55.0 + sectorBonus - concentrationPenalty);
     }
 
     private double calculateSectorFitScore(String sectorCode) {
-        if (sectorCode == null) {
+        if (sectorCode == null || sectorCode.isBlank()) {
             return neutralScore();
         }
 
-        return com.tradeagent.sector.SectorConstants.SUPPORTED_SECTORS.contains(sectorCode.toUpperCase())
-                ? 60.0
-                : 50.0;
+        String normalized = sectorCode.toUpperCase();
+
+        if (com.tradeagent.sector.SectorConstants.SUPPORTED_SECTORS.contains(normalized)) {
+            return 72.0;
+        }
+
+        return 48.0;
     }
 
     private double calculateTotalScore(double entryScore,
                                        double exitScore,
-                                       double riskScore,
-                                       double diversificationScore,
-                                       double sectorFitScore) {
+                                       double riskScore) {
         return clampScore(
-                entryScore * 0.30
+                entryScore * 0.35
                         + exitScore * 0.30
-                        + riskScore * 0.25
-                        + diversificationScore * 0.10
-                        + sectorFitScore * 0.05
+                        + riskScore * 0.35
         );
     }
 
@@ -488,6 +570,43 @@ public class TradeEvaluationService {
                 .divide(from, 6, RoundingMode.HALF_UP)
                 .multiply(BigDecimal.valueOf(100))
                 .doubleValue();
+    }
+
+    private BigDecimal average(List<BigDecimal> scores) {
+        if (scores.isEmpty()) {
+            return zeroScore();
+        }
+
+        BigDecimal total = scores.stream()
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        return total.divide(BigDecimal.valueOf(scores.size()), 2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal zeroScore() {
+        return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal scale(BigDecimal score) {
+        if (score == null) {
+            return BigDecimal.valueOf(50).setScale(2, RoundingMode.HALF_UP);
+        }
+
+        return score.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private double neutralScore() {
+        return 50.0;
+    }
+
+    private BigDecimal toScore(double value) {
+        return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private void validateUserId(Long userId) {
+        if (userId == null || userId <= 0) {
+            throw new ValidationException(ErrorCode.INVALID_INPUT, "userId must be a positive number");
+        }
     }
 
     private double clampScore(double score) {

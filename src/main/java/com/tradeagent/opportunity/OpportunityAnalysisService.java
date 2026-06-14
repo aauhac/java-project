@@ -2,15 +2,15 @@ package com.tradeagent.opportunity;
 
 import com.tradeagent.common.DateTimeUtil;
 import com.tradeagent.common.TradeType;
+import com.tradeagent.market.MarketDataService;
 import com.tradeagent.market.PriceBar;
-import com.tradeagent.market.PriceBarRepository;
+import com.tradeagent.opportunity.OpportunityApiModels.BetterTimingDto;
+import com.tradeagent.opportunity.OpportunityApiModels.OpportunityDto;
+import com.tradeagent.opportunity.OpportunityApiModels.OpportunitySummaryDto;
 import com.tradeagent.portfolio.TradeHistory;
 import com.tradeagent.portfolio.TradeHistoryRepository;
 import com.tradeagent.portfolio.WatchlistItem;
 import com.tradeagent.portfolio.WatchlistRepository;
-import com.tradeagent.opportunity.OpportunityApiModels.BetterTimingDto;
-import com.tradeagent.opportunity.OpportunityApiModels.OpportunityDto;
-import com.tradeagent.opportunity.OpportunityApiModels.OpportunitySummaryDto;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,18 +26,22 @@ import java.util.List;
 public class OpportunityAnalysisService {
 
     private static final int WATCH_DAYS = 10;
-    private static final BigDecimal BIG_UP_RATE = BigDecimal.valueOf(10.0);
-    private static final BigDecimal BIG_DOWN_RATE = BigDecimal.valueOf(-10.0);
+    private static final BigDecimal CLOSE_UP_RATE = BigDecimal.valueOf(10.0);
+    private static final BigDecimal CLOSE_DOWN_RATE = BigDecimal.valueOf(-10.0);
+    private static final BigDecimal SOFT_CLOSE_UP_RATE = BigDecimal.valueOf(5.0);
+    private static final BigDecimal SOFT_CLOSE_DOWN_RATE = BigDecimal.valueOf(-5.0);
+    private static final BigDecimal PEAK_UP_RATE = BigDecimal.valueOf(15.0);
+    private static final BigDecimal DRAWDOWN_RATE = BigDecimal.valueOf(-15.0);
 
     private final WatchlistRepository watchlistRepository;
-    private final PriceBarRepository priceBarRepository;
+    private final MarketDataService marketDataService;
     private final TradeHistoryRepository tradeHistoryRepository;
 
     public OpportunityAnalysisService(WatchlistRepository watchlistRepository,
-                                      PriceBarRepository priceBarRepository,
+                                      MarketDataService marketDataService,
                                       TradeHistoryRepository tradeHistoryRepository) {
         this.watchlistRepository = watchlistRepository;
-        this.priceBarRepository = priceBarRepository;
+        this.marketDataService = marketDataService;
         this.tradeHistoryRepository = tradeHistoryRepository;
     }
 
@@ -63,8 +67,14 @@ public class OpportunityAnalysisService {
 
     public OpportunitySummaryDto getOpportunitySummary(Long userId) {
         List<OpportunityDto> cases = analyzeWatchlist(userId);
-        int missedCount = (int) cases.stream().filter(item -> "MISSED_OPPORTUNITY".equals(item.type())).count();
-        int avoidedCount = (int) cases.stream().filter(item -> "AVOIDED_LOSS".equals(item.type())).count();
+
+        int missedCount = (int) cases.stream()
+                .filter(item -> "MISSED_OPPORTUNITY".equals(item.type()))
+                .count();
+
+        int avoidedCount = (int) cases.stream()
+                .filter(item -> "AVOIDED_LOSS".equals(item.type()))
+                .count();
 
         return new OpportunitySummaryDto(
                 missedCount,
@@ -89,13 +99,13 @@ public class OpportunityAnalysisService {
                   ? item.getCreatedAt().toLocalDate()
                   : LocalDate.now();
 
-        LocalDate endDate = startDate.plusDays(WATCH_DAYS);
+        LocalDate plannedEndDate = startDate.plusDays(WATCH_DAYS);
+        LocalDate today = LocalDate.now();
+        LocalDate endDate = plannedEndDate.isAfter(today) ? today : plannedEndDate;
 
-        List<PriceBar> bars = priceBarRepository.findBySymbolAndBarTimeBetween(
-                        item.getSymbol(),
-                        startDate.atStartOfDay(),
-                        endDate.atTime(java.time.LocalTime.MAX))
-                .stream()
+        List<PriceBar> bars = marketDataService.getHistoricalBars(item.getSymbol(), startDate, endDate).stream()
+                .filter(bar -> bar.getBarTime() != null)
+                .filter(bar -> !bar.getBarTime().toLocalDate().isBefore(startDate))
                 .sorted(Comparator.comparing(PriceBar::getBarTime))
                 .toList();
 
@@ -110,56 +120,84 @@ public class OpportunityAnalysisService {
             return List.of();
         }
 
-        BigDecimal basePrice = bars.get(0).getClosePrice();
+        BigDecimal basePrice = bars.stream()
+                .map(PriceBar::getClosePrice)
+                .filter(price -> price != null && price.compareTo(BigDecimal.ZERO) > 0)
+                .findFirst()
+                .orElse(null);
 
         if (basePrice == null || basePrice.compareTo(BigDecimal.ZERO) <= 0) {
             return List.of();
         }
 
-        BigDecimal maxRate = bars.stream()
-                .map(PriceBar::getHighPrice)
-                .filter(price -> price != null)
-                .map(price -> pctChange(basePrice, price))
-                .max(Comparator.naturalOrder())
-                .orElse(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+        BigDecimal lastClose = bars.stream()
+                .map(PriceBar::getClosePrice)
+                .filter(price -> price != null && price.compareTo(BigDecimal.ZERO) > 0)
+                .reduce((first, second) -> second)
+                .orElse(basePrice);
 
-        BigDecimal minRate = bars.stream()
+        BigDecimal peakPrice = bars.stream()
+                .map(PriceBar::getHighPrice)
+                .filter(price -> price != null && price.compareTo(BigDecimal.ZERO) > 0)
+                .max(Comparator.naturalOrder())
+                .orElse(basePrice);
+
+        BigDecimal lowPrice = bars.stream()
                 .map(PriceBar::getLowPrice)
-                .filter(price -> price != null)
-                .map(price -> pctChange(basePrice, price))
+                .filter(price -> price != null && price.compareTo(BigDecimal.ZERO) > 0)
                 .min(Comparator.naturalOrder())
-                .orElse(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+                .orElse(basePrice);
+
+        BigDecimal closeRate = pctChange(basePrice, lastClose);
+        BigDecimal peakRate = pctChange(basePrice, peakPrice);
+        BigDecimal drawdownRate = pctChange(basePrice, lowPrice);
 
         java.util.ArrayList<OpportunityDto> results = new java.util.ArrayList<>();
 
-        if (maxRate.compareTo(BIG_UP_RATE) >= 0) {
-            BigDecimal score = opportunityScore(maxRate);
+        boolean missedOpportunity = closeRate.compareTo(CLOSE_UP_RATE) >= 0
+                || (closeRate.compareTo(SOFT_CLOSE_UP_RATE) >= 0 && peakRate.compareTo(PEAK_UP_RATE) >= 0);
+
+        boolean avoidedLoss = closeRate.compareTo(CLOSE_DOWN_RATE) <= 0
+                || (closeRate.compareTo(SOFT_CLOSE_DOWN_RATE) <= 0 && drawdownRate.compareTo(DRAWDOWN_RATE) <= 0);
+
+        if (missedOpportunity) {
+            BigDecimal score = opportunityScore(closeRate.max(peakRate));
             results.add(new OpportunityDto(
                     "MISSED_OPPORTUNITY",
                     item.getSymbol(),
                     null,
-                    maxRate,
+                    closeRate,
                     score,
                     grade(score),
                     WATCH_DAYS,
-                    "관심종목 등록 후 " + WATCH_DAYS + "일 내 +10% 이상 상승",
-                    item.getSymbol() + "이(가) 관심종목 등록 후 " + WATCH_DAYS + "일 내 " + maxRate + "% 상승해 놓친 기회로 분류되었습니다.",
+                    "관심종목 기준일 이후 종가 흐름 기준 상승",
+                    item.getSymbol()
+                            + "은(는) 기준일 이후 종가 기준 "
+                            + closeRate
+                            + "% 변화했습니다. 기간 중 최고 상승률은 "
+                            + peakRate
+                            + "%입니다.",
                     detectedAt
             ));
         }
 
-        if (minRate.compareTo(BIG_DOWN_RATE) <= 0) {
-            BigDecimal score = opportunityScore(minRate.abs());
+        if (avoidedLoss) {
+            BigDecimal score = opportunityScore(closeRate.abs().max(drawdownRate.abs()));
             results.add(new OpportunityDto(
                     "AVOIDED_LOSS",
                     item.getSymbol(),
                     null,
-                    minRate,
+                    closeRate,
                     score,
                     grade(score),
                     WATCH_DAYS,
-                    "관심종목 등록 후 " + WATCH_DAYS + "일 내 -10% 이하 하락",
-                    item.getSymbol() + "이(가) 관심종목 등록 후 " + WATCH_DAYS + "일 내 " + minRate + "% 하락해 피한 위험으로 분류되었습니다.",
+                    "관심종목 기준일 이후 종가 흐름 기준 하락",
+                    item.getSymbol()
+                            + "은(는) 기준일 이후 종가 기준 "
+                            + closeRate
+                            + "% 변화했습니다. 기간 중 최대 하락률은 "
+                            + drawdownRate
+                            + "%입니다.",
                     detectedAt
             ));
         }
@@ -185,7 +223,7 @@ public class OpportunityAnalysisService {
 
     private BigDecimal opportunityScore(BigDecimal absRate) {
         BigDecimal score = BigDecimal.valueOf(40)
-                .add(absRate.multiply(BigDecimal.valueOf(2)));
+                .add(absRate.abs().multiply(BigDecimal.valueOf(2)));
 
         if (score.compareTo(BigDecimal.valueOf(100)) > 0) {
             score = BigDecimal.valueOf(100);
